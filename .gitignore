@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+public/app.js
+*.tsbuildinfo
+
+# Runtime state
+data/
+config/local.json
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test / coverage output
+coverage/
+.nyc_output/
+
+# Editor / OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

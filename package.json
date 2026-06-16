@@ -1,0 +1,20 @@
+{
+  "name": "dax-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local-first personal AI agent gateway inspired by OpenClaw.",
+  "scripts": {
+    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.web.json",
+    "dev": "npm run build && node dist/server.js --dev",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.15",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "app": {
+    "name": "DAX Agent",
+    "host": "127.0.0.1",
+    "port": 18789,
+    "workspace": "."
+  },
+  "model": {
+    "provider": "echo",
+    "baseUrl": "",
+    "apiKey": "",
+    "model": "local-echo",
+    "temperature": 0.2
+  },
+  "security": {
+    "autoRunReadTools": true,
+    "allowShell": true,
+    "commandTimeoutMs": 30000,
+    "maxReadBytes": 120000,
+    "maxSearchResults": 50
+  }
+}
