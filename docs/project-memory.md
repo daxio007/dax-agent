@@ -13,6 +13,7 @@
 - 用户提出 DAX Agent 可以被理解成一个“刚出生的小孩”：MCP 是感官和手脚，电脑磁盘是海马体式记忆空间，Skill 是被消化后的做事方法。当前阶段先写设计，不急着实现运行时。
 - 用户不希望项目用 Python 实现。项目方向已明确为 TypeScript-first。
 - 当前正在专注完善“读/眼睛”能力设计；不要提前展开其他能力。眼睛可以读文档、网页、电脑配置、应用内容、沟通内容、日历任务、结构化资源和自身记忆。读动作默认不需要逐次审批，但要记录来源、标记风险、控制读取量并过滤上下文。
+- 2026-06-17 开始设计“听/耳朵”能力。听不是单纯自然语言理解，而是接收用户和环境信号，并转换成意图、约束、纠正、状态变化、上下文需求和记忆候选。当前只设计听，不设计嘴巴、手、脚、执行或发送消息。
 
 ## 产品目标
 
@@ -47,6 +48,8 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 - `README.zh-CN.md`：中文项目说明。
 - `docs/agent-learning-model.md`：DAX Agent 的小孩模型、MCP/Skill 分层和按需学习设计。
 - `docs/read-capability-design.md`：DAX Agent 的第一类感官，也就是安全读能力设计。
+- `docs/listen-capability-design.md`：DAX Agent 的第二类感官，也就是听能力设计。
+- `docs/listen-capability-implementation.md`：听能力第一阶段运行时实现记录。
 
 运行目标：
 
@@ -110,6 +113,8 @@ http://127.0.0.1:18789
 - `docs/design-notes.md`：架构和设计说明。
 - `docs/agent-learning-model.md`：MCP、Skill、记忆和按需学习模型。
 - `docs/read-capability-design.md`：读能力、Read Plan、Context Filter 和 MCP resource 映射。
+- `docs/listen-capability-design.md`：听能力、ListenEvent、ListenResult、Intent、Constraint、Correction 和 Context Need。
+- `docs/listen-capability-implementation.md`：听能力代码入口、API、验证结果和当前边界。
 - `docs/decision-log.md`：按时间记录关键决策和原因。
 - `docs/roadmap.md`：下一步开发计划和优先级。
 - `docs/conversation-log.md`：简洁的对话摘要。
@@ -135,3 +140,65 @@ http://127.0.0.1:18789
 - 编译后读取核心可读取 `README.md` 和电脑配置。
 - HTTP API `/api/read/execute` 可返回 `ReadResult` 和 `ContextBlock`。
 - `/api/read-events` 可返回最近读取事件。
+
+## 2026-06-17 听能力设计
+
+本轮新增 `docs/listen-capability-design.md`，把“听/耳朵”定义为 DAX Agent 的第二类感官。
+
+核心定义：
+
+```text
+听 = 接收信号，并判断它对 Agent 意味着什么。
+```
+
+听能力覆盖：
+- 用户文本和语音转写。
+- UI 控制事件。
+- Channel 消息。
+- MCP 通知。
+- 工具结果事件。
+- 应用状态事件。
+- 时间和任务事件。
+
+听能力输出：
+- `ListenEvent`：统一输入事件。
+- `ListenResult`：结构化理解结果。
+- `Intent`：用户或事件的主要意图。
+- `SpeechAct`：话语动作。
+- `Constraint`：用户设定的约束。
+- `Correction`：用户纠正 Agent 的信息。
+- `Reference`：上下文指代。
+- `StateChange`：暂停、继续、停止、范围变化。
+- `ContextNeed`：是否需要触发读能力。
+- `MemoryCandidate`：是否应该沉淀到项目记忆。
+
+设计边界：
+- 听是感知，不是执行。
+- 听到不等于保存。
+- 听到不等于同意执行。
+- 听能力可以建议下一步触发 ReadPlan，但不自己读取或执行。
+
+## 2026-06-17 听能力第一阶段实现
+
+本轮根据 `docs/listen-capability-design.md` 实现“听/耳朵”能力第一阶段运行时。
+
+已实现：
+- `src/lib/types.ts` 新增 `ListenEvent`、`ListenResult`、`ListenIntent`、`SpeechAct`、`ListenConstraint`、`ListenCorrection`、`ListenReference`、`ListenStateChange`、`ListenContextNeed`、`ListenMemoryCandidate`。
+- `src/lib/listen.ts` 新增规则驱动的听能力核心，每个方法都有 JSDoc，说明使用方法和作用。
+- `src/lib/store.ts` 新增 `recordListenAnalysis()`、`listListenEvents()`、`listListenResults()`，把听事件和听结果纳入持久化和 audit。
+- `src/server.ts` 新增 `POST /api/listen/analyze`、`GET /api/listen-events`、`GET /api/listen-results`。
+- `src/lib/agent.ts` 已把用户消息入口接入听能力，用户消息进入 slash command 或模型流程前会先生成 `ListenEvent` 和 `ListenResult`。
+- `docs/listen-capability-implementation.md` 记录第一阶段实现边界、入口和验证结果。
+
+当前能力：
+- 能识别 ask、explain、design、implement、commit、push、pause、continue、stop、correct、status 等基础意图。
+- 能识别请求、问题、指令、约束、纠正、偏好等话语动作。
+- 能提取 scope、process、technology、language、style、pace 等约束。
+- 能把上下文需求映射成建议 `ReadSource`，为“先听，再读”打通接口。
+
+验证结果：
+- `npm run typecheck` 通过。
+- `npm run build` 通过。
+- 编译后听能力核心可分析用户输入。
+- HTTP API `/api/listen/analyze` 可返回 `ListenEvent`、`ListenResult` 和建议 `ReadSource`。
+- 用户消息 API `/api/sessions/:id/messages` 已确认会返回 `listenResult`。

@@ -4,6 +4,8 @@ import { newId, nowIso } from "./ids.js";
 import type {
   AuditRecord,
   JsonObject,
+  ListenEvent,
+  ListenResult,
   Message,
   MessageRole,
   ReadEvent,
@@ -25,6 +27,8 @@ function emptyStore(): Store {
     messages: [],
     toolRuns: [],
     readEvents: [],
+    listenEvents: [],
+    listenResults: [],
     audit: []
   };
 }
@@ -282,4 +286,69 @@ export async function recordReadEvent(
 export async function listReadEvents(limit = 100): Promise<ReadEvent[]> {
   const store = await readStore();
   return store.readEvents.slice(-limit).reverse();
+}
+
+/**
+ * 记录一次“耳朵”听到的输入事件和结构化理解结果。
+ *
+ * 使用方法：
+ * - 用户消息、UI 控制事件、工具结果或未来 MCP 通知进入 Agent Core 前调用。
+ * - 调用方传入已经生成好的 ListenEvent 和 ListenResult。
+ * - 返回写入后的 event/result，方便 API 层或 Agent 层继续使用。
+ *
+ * 作用：
+ * - 保留 Agent 听到了什么、如何理解、下一步建议是什么。
+ * - 让后续调试、记忆沉淀和 Skill 唤醒可以复盘听力判断。
+ */
+export async function recordListenAnalysis(
+  event: ListenEvent,
+  result: ListenResult
+): Promise<{ event: ListenEvent; result: ListenResult }> {
+  return mutate((store) => {
+    store.listenEvents.push(event);
+    store.listenResults.push(result);
+    store.audit.push({
+      id: newId("aud"),
+      type: "listen.analyzed",
+      sessionId: event.sessionId,
+      listenEventId: event.id,
+      listenResultId: result.id,
+      listenIntent: result.primaryIntent,
+      riskFlags: result.riskFlags,
+      createdAt: nowIso()
+    });
+    return { event, result };
+  });
+}
+
+/**
+ * 读取最近的“耳朵”输入事件。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 传入 limit 可以控制数量，例如 listListenEvents(20)。
+ *
+ * 作用：
+ * - 给调试页、审计页和未来 Memory Policy 提供输入事件时间线。
+ * - 事件中的 rawText 已由听能力模块做基础脱敏和截断。
+ */
+export async function listListenEvents(limit = 100): Promise<ListenEvent[]> {
+  const store = await readStore();
+  return store.listenEvents.slice(-limit).reverse();
+}
+
+/**
+ * 读取最近的“耳朵”理解结果。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 传入 limit 可以查看更短或更长的听力分析历史。
+ *
+ * 作用：
+ * - 展示 Agent 最近如何理解用户和环境信号。
+ * - 帮助检查 intent、constraint、correction 和 contextNeed 是否判断正确。
+ */
+export async function listListenResults(limit = 100): Promise<ListenResult[]> {
+  const store = await readStore();
+  return store.listenResults.slice(-limit).reverse();
 }

@@ -74,3 +74,12 @@
 - 当前已支持本地文件、文档、workspace、memory/runtime 文件、网页、电脑配置和 workspace 搜索；应用内容、通信、日历、MCP resource 和 app state 暂时等待 connector。
 - Codex 通过 `npm run typecheck`、`npm run build`、编译后核心调用和 HTTP API 调用验证读能力跑通。
 - Codex 新增 `docs/read-capability-implementation.md` 记录第一阶段实现边界和验证结果。
+- 用户询问听能力是否重要，以及听是否只是理解自然语言。
+- Codex 解释：听不只是自然语言理解，而是接收信号、判断是否与 Agent 相关、理解意图、提取约束、识别纠正、判断是否需要触发读能力。
+- 用户决定按这个方案设计“耳朵”，要求写详细设计文档。
+- Codex 新增 `docs/listen-capability-design.md`，把听能力定义为 DAX Agent 的第二类感官，覆盖 ListenEvent、ListenResult、Intent、SpeechAct、Constraint、Correction、Reference、StateChange、ContextNeed、MemoryCandidate 和未来实现顺序。
+- 用户要求根据听能力文档开始写代码，并强调逻辑清晰、每个方法都要有详细 doc 解释使用方法和作用。
+- Codex 实现听能力第一阶段：新增 `src/lib/listen.ts` 规则驱动听力核心，补充 ListenEvent、ListenResult 等类型，加入 listen event/result 持久化和 HTTP API。
+- Codex 将用户消息入口接入听能力：消息进入 slash command 或模型流程前，会先记录 `ListenEvent` 和 `ListenResult`。
+- Codex 通过 `npm run typecheck`、`npm run build`、编译后核心调用、HTTP API 调用和真实消息 API 调用验证听能力跑通。
+- Codex 新增 `docs/listen-capability-implementation.md` 记录第一阶段实现边界和验证结果。

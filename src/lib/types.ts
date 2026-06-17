@@ -89,6 +89,154 @@ export interface ReadEvent {
   createdAt: string;
 }
 
+export type ListenEventKind =
+  | "user_text"
+  | "user_voice_transcript"
+  | "ui_control"
+  | "channel_message"
+  | "mcp_notification"
+  | "tool_result"
+  | "app_state"
+  | "timer"
+  | "system_event";
+
+export type ListenPrivacyLevel = "public" | "personal" | "sensitive";
+
+export type ListenTrust = "high" | "medium" | "low";
+
+export type ListenIntent =
+  | "chat"
+  | "ask"
+  | "explain"
+  | "design"
+  | "implement"
+  | "review"
+  | "inspect"
+  | "read"
+  | "commit"
+  | "push"
+  | "configure"
+  | "pause"
+  | "continue"
+  | "stop"
+  | "correct"
+  | "approve"
+  | "reject"
+  | "remember"
+  | "forget"
+  | "status"
+  | "unknown";
+
+export type SpeechAct =
+  | "request"
+  | "question"
+  | "instruction"
+  | "constraint"
+  | "correction"
+  | "confirmation"
+  | "rejection"
+  | "preference"
+  | "status_request"
+  | "brainstorm"
+  | "casual";
+
+export type ListenNextStep =
+  | "answer_directly"
+  | "read_then_answer"
+  | "plan"
+  | "implement"
+  | "ask_clarifying_question"
+  | "pause"
+  | "resume"
+  | "record_memory"
+  | "ignore_noise"
+  | "agent_core";
+
+export interface ListenEvent {
+  id: string;
+  kind: ListenEventKind;
+  channelId: string;
+  sessionId?: string;
+  userId?: string;
+  locale?: string;
+  rawText?: string;
+  payload?: JsonObject;
+  sourceLabel: string;
+  privacyLevel: ListenPrivacyLevel;
+  trust: ListenTrust;
+  capturedAt: string;
+}
+
+export interface ListenReference {
+  text: string;
+  resolvedTo?: string;
+  confidence: number;
+  needsRead: boolean;
+}
+
+export interface ListenConstraint {
+  kind: "scope" | "permission" | "technology" | "style" | "language" | "pace" | "privacy" | "process";
+  content: string;
+  duration: "turn" | "session" | "project" | "permanent";
+  strength: "soft" | "hard";
+  sourceText?: string;
+}
+
+export interface ListenCorrection {
+  wrong?: string;
+  correct?: string;
+  target: "terminology" | "scope" | "assumption" | "implementation" | "memory" | "behavior";
+  shouldUpdateMemory: boolean;
+  sourceText: string;
+}
+
+export interface ListenStateChange {
+  kind: "pause" | "resume" | "stop" | "scope_change" | "mode_change" | "priority_change";
+  value: string;
+  appliesTo: "current_turn" | "current_task" | "session" | "project";
+}
+
+export interface ListenContextNeed {
+  kind:
+    | "workspace"
+    | "memory"
+    | "document"
+    | "web_page"
+    | "computer_config"
+    | "app_content"
+    | "mcp_resource"
+    | "none";
+  reason: string;
+  suggestedTarget?: string;
+  required: boolean;
+}
+
+export interface ListenMemoryCandidate {
+  kind: "user_preference" | "project_constraint" | "decision" | "terminology" | "correction" | "workflow";
+  content: string;
+  importance: "low" | "medium" | "high";
+  suggestedStore: "none" | "conversation_log" | "project_memory" | "decision_log";
+}
+
+export interface ListenResult {
+  id: string;
+  eventId: string;
+  primaryIntent: ListenIntent;
+  intents: ListenIntent[];
+  speechActs: SpeechAct[];
+  target?: string;
+  references: ListenReference[];
+  constraints: ListenConstraint[];
+  corrections: ListenCorrection[];
+  stateChanges: ListenStateChange[];
+  contextNeeds: ListenContextNeed[];
+  memoryCandidates: ListenMemoryCandidate[];
+  riskFlags: string[];
+  confidence: number;
+  nextStep: ListenNextStep;
+  createdAt: string;
+}
+
 export interface AppConfig {
   app: {
     name: string;
@@ -161,6 +309,9 @@ export interface AuditRecord {
   sessionId?: string;
   toolRunId?: string;
   readEventId?: string;
+  listenEventId?: string;
+  listenResultId?: string;
+  listenIntent?: ListenIntent;
   readSource?: string;
   riskLevel?: ReadRiskLevel;
   riskFlags?: string[];
@@ -176,6 +327,8 @@ export interface Store {
   messages: Message[];
   toolRuns: ToolRun[];
   readEvents: ReadEvent[];
+  listenEvents: ListenEvent[];
+  listenResults: ListenResult[];
   audit: AuditRecord[];
 }
 

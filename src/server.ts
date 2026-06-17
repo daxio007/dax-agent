@@ -9,6 +9,8 @@ import {
   deleteSession,
   getSession,
   listAudit,
+  listListenEvents,
+  listListenResults,
   listReadEvents,
   listSessions,
   listToolRuns,
@@ -17,7 +19,8 @@ import {
 import { processUserMessage } from "./lib/agent.js";
 import { executeToolRun } from "./lib/tools.js";
 import { coerceReadSource, createReadPlan, executeAndRecordReadPlan } from "./lib/read.js";
-import type { AppConfig, DeepPartial, JsonObject, ReadPlan, ReadSource } from "./lib/types.js";
+import { analyzeAndRecordListenEvent } from "./lib/listen.js";
+import type { AppConfig, DeepPartial, JsonObject, ListenEventKind, ListenPrivacyLevel, ListenTrust, ReadPlan, ReadSource } from "./lib/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "..", "public");
@@ -184,6 +187,59 @@ function readPlanFromBody(body: JsonObject, config: AppConfig): ReadPlan {
   return plan;
 }
 
+/**
+ * 从 unknown 中读取可选 JSON 对象。
+ *
+ * 使用方法：
+ * - listen API 处理 payload 字段时调用。
+ *
+ * 作用：
+ * - 保证 payload 只接收普通对象，避免数组、字符串或 null 混入结构化事件。
+ */
+function optionalJsonObject(value: unknown): JsonObject | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as JsonObject;
+}
+
+/**
+ * 从请求 body 中读取听力事件类型。
+ *
+ * 使用方法：
+ * - /api/listen/analyze 接收 kind 时调用。
+ *
+ * 作用：
+ * - 让 API 层只做轻量转换，真正的类型合法性由 listen.ts 校验。
+ */
+function optionalListenEventKind(value: unknown): ListenEventKind | undefined {
+  return typeof value === "string" ? (value as ListenEventKind) : undefined;
+}
+
+/**
+ * 从请求 body 中读取隐私等级。
+ *
+ * 使用方法：
+ * - /api/listen/analyze 接收 privacyLevel 时调用。
+ *
+ * 作用：
+ * - 允许调用方显式标记 public、personal 或 sensitive。
+ */
+function optionalListenPrivacyLevel(value: unknown): ListenPrivacyLevel | undefined {
+  return value === "public" || value === "personal" || value === "sensitive" ? value : undefined;
+}
+
+/**
+ * 从请求 body 中读取来源可信度。
+ *
+ * 使用方法：
+ * - /api/listen/analyze 接收 trust 时调用。
+ *
+ * 作用：
+ * - 允许 Channel Adapter 对输入来源给出 high、medium 或 low 评级。
+ */
+function optionalListenTrust(value: unknown): ListenTrust | undefined {
+  return value === "high" || value === "medium" || value === "low" ? value : undefined;
+}
+
 async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost");
   const unsafePath = decodeURIComponent(url.pathname);
@@ -321,6 +377,40 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
   if (method === "GET" && (url.pathname === "/api/read-events" || url.pathname === "/api/read/events")) {
     const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
     sendJson(res, 200, await listReadEvents(limit));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/listen/analyze") {
+    const body = await readBody(req);
+    const rawText = optionalString(body.rawText) || optionalString(body.content);
+    sendJson(
+      res,
+      201,
+      await analyzeAndRecordListenEvent({
+        kind: optionalListenEventKind(body.kind),
+        channelId: optionalString(body.channelId) || "api",
+        sessionId: optionalString(body.sessionId),
+        userId: optionalString(body.userId),
+        locale: optionalString(body.locale),
+        rawText,
+        payload: optionalJsonObject(body.payload),
+        sourceLabel: optionalString(body.sourceLabel) || "Listen API",
+        privacyLevel: optionalListenPrivacyLevel(body.privacyLevel),
+        trust: optionalListenTrust(body.trust)
+      })
+    );
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/listen-events" || url.pathname === "/api/listen/events")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listListenEvents(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/listen-results" || url.pathname === "/api/listen/results")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listListenResults(limit));
     return;
   }
 

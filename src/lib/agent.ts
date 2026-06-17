@@ -7,7 +7,8 @@ import {
 } from "./store.js";
 import { completeChat } from "./providers.js";
 import { executeTool, executeToolRun, getTool, toolManifest } from "./tools.js";
-import type { AppConfig, ChatMessage, JsonObject, Locale, Message, ToolRun } from "./types.js";
+import { analyzeAndRecordUserText } from "./listen.js";
+import type { AppConfig, ChatMessage, JsonObject, ListenEvent, ListenResult, Locale, Message, ToolRun } from "./types.js";
 
 type SlashCommand =
   | { kind: "help" }
@@ -23,6 +24,8 @@ interface ProcessUserMessageResult {
   userMessage: Message;
   assistantMessage: Message;
   toolRuns: (ToolRun | null)[];
+  listenEvent: ListenEvent;
+  listenResult: ListenResult;
 }
 
 function isZh(locale: Locale): boolean {
@@ -232,14 +235,33 @@ export async function processUserMessage(
   locale: Locale = "zh-CN"
 ): Promise<ProcessUserMessageResult> {
   const config = await loadConfig();
-  const userMessage = await addMessage(sessionId, "user", content);
+  const recentBeforeListen = await getRecentMessages(sessionId, 30);
+  const listenAnalysis = await analyzeAndRecordUserText(
+    content,
+    {
+      sessionId,
+      locale,
+      channelId: "webchat",
+      sourceLabel: "WebChat"
+    },
+    recentBeforeListen
+  );
+  const userMessage = await addMessage(sessionId, "user", content, {
+    listenEventId: listenAnalysis.event.id,
+    listenResultId: listenAnalysis.result.id,
+    primaryIntent: listenAnalysis.result.primaryIntent,
+    nextStep: listenAnalysis.result.nextStep,
+    listenConfidence: listenAnalysis.result.confidence
+  });
   const slash = parseSlashCommand(content);
   if (slash) {
     const slashResult = await handleSlash(sessionId, userMessage, slash, locale);
     return {
       userMessage,
       assistantMessage: slashResult.message,
-      toolRuns: slashResult.toolRuns
+      toolRuns: slashResult.toolRuns,
+      listenEvent: listenAnalysis.event,
+      listenResult: listenAnalysis.result
     };
   }
 
@@ -272,7 +294,9 @@ export async function processUserMessage(
     return {
       userMessage,
       assistantMessage,
-      toolRuns
+      toolRuns,
+      listenEvent: listenAnalysis.event,
+      listenResult: listenAnalysis.result
     };
   } catch (error) {
     const assistantMessage = await addMessage(
@@ -286,7 +310,9 @@ export async function processUserMessage(
     return {
       userMessage,
       assistantMessage,
-      toolRuns: []
+      toolRuns: [],
+      listenEvent: listenAnalysis.event,
+      listenResult: listenAnalysis.result
     };
   }
 }
