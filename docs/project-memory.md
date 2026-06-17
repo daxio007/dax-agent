@@ -18,6 +18,7 @@
 - 2026-06-17 开始设计“大脑/Agent Core”。大脑不应全靠硬编码规则，也不应完全交给模型；模型负责思考和方案生成，代码负责骨架、边界、调度、schema 校验、Policy Gate 和审计。第一版大脑应支持低等级模型作为日常 Model Reasoner，高级模型只是未来可选升级。
 - 2026-06-17 开始设计“手/修改”能力。手是第一类行动器，负责对本地或外部对象进行可审计、可预览、可确认的修改。第一版手应收窄到 workspace 写入和 patch，外部对象、数据库、GUI 应用和发送消息暂不实现。
 - 2026-06-17 明确手能力代码实现也必须先写实现设计文档，再写运行时代码。后续每个 exported 方法，以及涉及路径、安全、风险、diff、hash、写入的关键内部 helper，都必须有详细 JSDoc，解释使用方法、作用和边界。
+- 2026-06-17 已补充完整版手能力设计，并实现手能力第一阶段运行时。当前手能力支持 workspace 内文本文件创建、更新和结构化 `apply_patch`，采用 `HandPlan -> HandPreview -> HandResult`，并为完整版 adapter、rollback、外部对象和大脑接入预留类型字段。
 - 2026-06-17 已设计并实现“脚/执行”能力第一阶段。脚是第一类执行器，负责在受控边界内启动、观察和结束本地执行过程。第一版脚只做 workspace 内前台命令执行，采用 `FootPlan -> FootPreview -> FootResult`，并让现有 `shell.run` 复用脚能力审计链。
 
 ## 产品目标
@@ -38,7 +39,7 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 
 第一版已经迁移为 TypeScript-first 的 Node.js 本地应用。
 
-截至 2026-06-17，“读/眼睛”“听/耳朵”“嘴巴/表达”和“脚/执行”的第一阶段运行时已经完成。读和听已经推送到 `main` 分支；嘴巴运行时、大脑设计、手能力设计和脚能力运行时已经在本地提交或准备提交。后续讨论和开发应把读、听、说、脚视为当前基线，而不是待设计事项。
+截至 2026-06-17，“读/眼睛”“听/耳朵”“嘴巴/表达”“手/修改”和“脚/执行”的第一阶段运行时已经完成。读和听已经推送到 `main` 分支；嘴巴运行时、大脑设计、手能力运行时和脚能力运行时已经在本地提交或准备提交。后续讨论和开发应把读、听、说、手、脚视为当前基线，而不是待设计事项。
 
 主要模块：
 
@@ -51,6 +52,7 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 - `src/lib/read.ts`：统一读能力核心。
 - `src/lib/listen.ts`：统一听能力核心。
 - `src/lib/speak.ts`：统一嘴巴表达能力核心。
+- `src/lib/hand.ts`：统一手修改能力核心。
 - `src/lib/foot.ts`：统一脚执行能力核心。
 - `src/lib/providers.ts`：echo、OpenAI-compatible、Ollama-compatible 模型 Provider 抽象。
 - `src/lib/config.ts`：默认配置、本地配置、环境变量配置和 API key 脱敏。
@@ -64,6 +66,7 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 - `docs/speak-capability-design.md`：DAX Agent 的第三类表达器，也就是嘴巴能力设计。
 - `docs/hand-capability-design.md`：DAX Agent 的第一类行动器，也就是手能力设计。
 - `docs/hand-capability-implementation-plan.md`：手能力第一阶段代码实现设计，规定类型、方法、API、审计、验证计划和 JSDoc 要求。
+- `docs/hand-capability-implementation.md`：手能力第一阶段运行时实现记录。
 - `docs/foot-capability-design.md`：DAX Agent 的第一类执行器，也就是脚能力设计。
 - `docs/foot-capability-implementation.md`：脚能力第一阶段运行时实现记录。
 - `docs/read-capability-implementation.md`：读能力第一阶段运行时实现记录。
@@ -111,6 +114,7 @@ http://127.0.0.1:18789
 - 读/眼睛第一阶段运行时。
 - 听/耳朵第一阶段运行时。
 - 嘴巴/表达第一阶段运行时。
+- 手/修改第一阶段运行时。
 - 脚/执行第一阶段运行时。
 - 需要审批的 shell 工具。
 - Audit Trail。
@@ -141,6 +145,7 @@ http://127.0.0.1:18789
 - `docs/speak-capability-design.md`：嘴巴能力、SpeakPlan、SpeakMessage、SpeakResult、受众、草稿和表达边界。
 - `docs/hand-capability-design.md`：手能力、HandPlan、HandAction、HandPreview、HandResult、diff preview 和审批边界。
 - `docs/hand-capability-implementation-plan.md`：手能力第一阶段实现设计，尤其是 workspace 写入、preview、apply、audit 和方法 JSDoc 规范。
+- `docs/hand-capability-implementation.md`：手能力代码入口、API、验证结果和当前边界。
 - `docs/foot-capability-design.md`：脚能力、FootPlan、FootPreview、FootResult、本地命令执行和审批边界。
 - `docs/foot-capability-implementation.md`：脚能力代码入口、API、验证结果和当前边界。
 - `docs/read-capability-implementation.md`：读能力代码入口、API、验证结果和当前边界。
@@ -325,6 +330,31 @@ http://127.0.0.1:18789
 - 后续要在 `src/lib/types.ts` 增加 Hand 类型，在 `src/lib/hand.ts` 新增核心，在 `src/lib/store.ts` 增加持久化和 audit，在 `src/server.ts` 增加 hand API。
 - 每个 exported 方法，以及涉及路径、安全、风险、diff、hash、写入的关键内部 helper，都必须写 JSDoc，说明使用方法、作用和边界。
 - 第一阶段手能力先作为独立 capability 和 HTTP API 跑通，暂时不接入 `src/lib/agent.ts` 自然语言主流程；等 Agent Core 第一阶段出现后，再接 `ActionProposal -> HandPlan`。
+
+## 2026-06-17 手能力完整版设计补充与第一阶段实现
+
+本轮把“完整版手能力”补充进 `docs/hand-capability-design.md`，并实现手能力第一阶段运行时。
+
+完整版设计结论：
+- 手不只是 workspace 文件写入器，而是所有修改行为的统一安全执行层。
+- 完整版需要 `HandTarget` 和 adapter 层，例如 WorkspaceFile、Document、Config、BrowserState、GitHub、Notion、Calendar、DatabaseRecord 等 adapter。
+- 完整版必须设计 rollback，记录 `rollbackStrategy`、是否可回滚、是否需要 snapshot 或外部 revision。
+- 完整版需要和脚协作：手修改源码后，脚运行 typecheck/test/build，嘴巴基于 `HandResult` 和 `FootResult` 汇报。
+- 完整手不能被模型直接调用，未来必须经过大脑的 `ActionProposal -> HandPlan`。
+
+已实现：
+- `src/lib/types.ts` 新增 `HandAction`、`HandPlan`、`HandActionPreview`、`HandPreview`、`HandResult` 和 rollback 相关类型。
+- `src/lib/hand.ts` 新增手能力核心，覆盖计划、预览、风险标记、workspace 路径边界、hash guard、diff、应用和结果记录。
+- `src/lib/store.ts` 新增 `recordHandPlan()`、`recordHandPreview()`、`recordHandResult()`、`listHandPlans()`、`listHandPreviews()`、`listHandResults()`。
+- `src/server.ts` 新增 `POST /api/hand/plan`、`POST /api/hand/preview`、`POST /api/hand/apply`、`POST /api/hand/execute`、`GET /api/hand-plans`、`GET /api/hand-previews`、`GET /api/hand-results`。
+- `docs/hand-capability-implementation.md` 记录代码入口、API、验证结果和当前边界。
+
+当前边界：
+- 第一阶段只支持 workspace 内文本文件创建、更新和结构化 `apply_patch`。
+- 删除、移动、外部对象、数据库、GUI、剪贴板和消息草稿暂不应用。
+- 当前 `apply_patch` 不是任意 diff parser，而是把结构化 action.content 作为目标最终内容。
+- rollback 只记录策略，不执行回滚。
+- 尚未接入 Agent Core 和自然语言主流程。
 
 ## 2026-06-17 脚能力设计与第一阶段实现
 

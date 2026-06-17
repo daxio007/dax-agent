@@ -231,7 +231,7 @@ POST /api/foot/execute
 
 ## 后续建议
 
-下一步可以继续实现手能力第一阶段，也可以先做 Agent Core 第一阶段，让大脑能统一调度眼睛、耳朵、嘴巴、手和脚。
+下一步可以先做 Agent Core 第一阶段，让大脑能统一调度眼睛、耳朵、嘴巴、手和脚；也可以继续增强手能力的 rollback、dirty workspace 检测和 adapter 层。
 
 如果继续脚能力，推荐顺序：
 

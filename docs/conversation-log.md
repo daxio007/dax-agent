@@ -113,3 +113,9 @@
 - 第一阶段脚能力只支持 workspace 内前台命令执行，采用 `FootPlan -> FootPreview -> FootResult`，捕获 stdout、stderr、exit code、timeout 和 duration。
 - 脚能力默认任何真实进程执行都需要审批；API 中 `approved: true` 表示调用方已完成审批。
 - Codex 新增 `docs/foot-capability-implementation.md` 记录代码入口、API、验证结果和当前边界。
+- 用户回头审视手能力，指出初版设计合理，并要求把“完整版手能力”设计补充进手设计文档，同时更新代码。
+- Codex 补充 `docs/hand-capability-design.md`：手不只是文件写入器，而是所有修改行为的统一安全执行层；完整版需要 target/adapter、rollback、与脚协作、与大脑 ActionProposal 对接、进入 Episode Memory 和 Skill 候选。
+- Codex 实现手能力第一阶段运行时：新增 `src/lib/hand.ts`、Hand 类型、hand store/audit、hand HTTP API。
+- 第一阶段手能力支持 workspace 内文本文件创建、更新和结构化 `apply_patch`，采用 `HandPlan -> HandPreview -> HandResult`。
+- 当前 `apply_patch` 不是任意 diff parser，而是应用结构化 action.content 作为目标最终内容；删除、移动、外部对象、数据库、GUI、剪贴板和消息草稿暂不应用。
+- Codex 新增 `docs/hand-capability-implementation.md` 记录代码入口、API、验证结果和当前边界。

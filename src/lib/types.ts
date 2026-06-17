@@ -372,6 +372,112 @@ export interface SpeakResult {
   createdAt: string;
 }
 
+export type HandRiskLevel = "H0" | "H1" | "H2" | "H3";
+
+export type HandTargetKind =
+  | "workspace_file"
+  | "document"
+  | "config"
+  | "external_object"
+  | "database_record"
+  | "application_state"
+  | "browser_state"
+  | "clipboard"
+  | "message_draft";
+
+export type HandActionKind =
+  | "create_file"
+  | "update_file"
+  | "delete_file"
+  | "move_file"
+  | "apply_patch"
+  | "append"
+  | "replace_range"
+  | "structured_update"
+  | "create_external_draft"
+  | "update_external_object"
+  | "update_database_record"
+  | "update_application_state";
+
+export type HandResultStatus = "applied" | "rejected" | "failed" | "skipped";
+
+export type HandRollbackStrategy =
+  | "none"
+  | "snapshot"
+  | "reverse_patch"
+  | "external_revision"
+  | "adapter_defined";
+
+export interface HandAction {
+  id: string;
+  kind: HandActionKind;
+  targetKind: HandTargetKind;
+  target: string;
+  reason: string;
+  expectedChange: string;
+  inputSummary: string;
+  content?: string;
+  expectedCurrentHash?: string;
+  adapterId?: string;
+  rollbackStrategy?: HandRollbackStrategy;
+}
+
+export interface HandPlan {
+  id: string;
+  goal: string;
+  reason: string;
+  targetKind: HandTargetKind;
+  actions: HandAction[];
+  riskLevel: HandRiskLevel;
+  requiresPreview: boolean;
+  requiresApproval: boolean;
+  expectedOutcome: string;
+  createdAt: string;
+}
+
+export interface HandActionPreview {
+  actionId: string;
+  target: string;
+  beforeHash?: string;
+  afterHash?: string;
+  beforeBytes: number;
+  afterBytes: number;
+  diff: string;
+  riskFlags: string[];
+  reversible: boolean;
+  rollbackStrategy: HandRollbackStrategy;
+  summary: string;
+}
+
+export interface HandPreview {
+  id: string;
+  planId: string;
+  summary: string;
+  affectedTargets: string[];
+  actionPreviews: HandActionPreview[];
+  diff: string;
+  reversible: boolean;
+  rollbackStrategy: HandRollbackStrategy;
+  riskLevel: HandRiskLevel;
+  riskFlags: string[];
+  requiresApproval: boolean;
+  createdAt: string;
+}
+
+export interface HandResult {
+  id: string;
+  planId: string;
+  previewId?: string;
+  status: HandResultStatus;
+  changedTargets: string[];
+  diffApplied?: string;
+  error?: string;
+  auditId?: string;
+  rollbackAvailable: boolean;
+  rollbackStrategy: HandRollbackStrategy;
+  createdAt: string;
+}
+
 export type FootRiskLevel = "F0" | "F1" | "F2" | "F3";
 
 export type FootActionKind =
@@ -545,6 +651,10 @@ export interface AuditRecord {
   speakPlanId?: string;
   speakMessageId?: string;
   speakResultId?: string;
+  handPlanId?: string;
+  handPreviewId?: string;
+  handResultId?: string;
+  handRiskLevel?: HandRiskLevel;
   footPlanId?: string;
   footPreviewId?: string;
   footResultId?: string;
@@ -574,6 +684,9 @@ export interface Store {
   speakPlans: SpeakPlan[];
   speakMessages: SpeakMessage[];
   speakResults: SpeakResult[];
+  handPlans: HandPlan[];
+  handPreviews: HandPreview[];
+  handResults: HandResult[];
   footPlans: FootPlan[];
   footPreviews: FootPreview[];
   footResults: FootResult[];

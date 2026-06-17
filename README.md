@@ -87,6 +87,7 @@ This is intentionally a small, inspectable foundation. More channels, richer ski
 - `docs/speak-capability-design.md`
 - `docs/hand-capability-design.md`
 - `docs/hand-capability-implementation-plan.md`
+- `docs/hand-capability-implementation.md`
 - `docs/foot-capability-design.md`
 - `docs/foot-capability-implementation.md`
 - `docs/read-capability-implementation.md`

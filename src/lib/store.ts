@@ -6,6 +6,9 @@ import type {
   FootPlan,
   FootPreview,
   FootResult,
+  HandPlan,
+  HandPreview,
+  HandResult,
   JsonObject,
   ListenEvent,
   ListenResult,
@@ -38,6 +41,9 @@ function emptyStore(): Store {
     speakPlans: [],
     speakMessages: [],
     speakResults: [],
+    handPlans: [],
+    handPreviews: [],
+    handResults: [],
     footPlans: [],
     footPreviews: [],
     footResults: [],
@@ -456,6 +462,156 @@ export async function listSpeakMessages(limit = 100): Promise<SpeakMessage[]> {
 export async function listSpeakResults(limit = 100): Promise<SpeakResult[]> {
   const store = await readStore();
   return store.speakResults.slice(-limit).reverse();
+}
+
+/**
+ * 记录一次“手”修改计划，并写入审计日志。
+ *
+ * 使用方法：
+ * - hand.ts 创建 HandPlan 后调用 recordHandPlan(plan)。
+ * - 如果同一个 plan id 已经存在，会覆盖旧内容，方便 API plan -> preview -> apply 流程复用。
+ *
+ * 作用：
+ * - 保存“准备修改什么、为什么修改、风险等级和是否需要审批”。
+ * - 明确计划不是修改结果，不能据此声称文件或外部对象已经被改变。
+ */
+export async function recordHandPlan(plan: HandPlan): Promise<HandPlan> {
+  return mutate((store) => {
+    const index = store.handPlans.findIndex((item) => item.id === plan.id);
+    if (index >= 0) {
+      store.handPlans[index] = plan;
+    } else {
+      store.handPlans.push(plan);
+    }
+    store.audit.push({
+      id: newId("aud"),
+      type: "hand.planned",
+      handPlanId: plan.id,
+      handRiskLevel: plan.riskLevel,
+      riskFlags: plan.requiresApproval ? ["requires_user_confirmation"] : [],
+      approvalRequired: plan.requiresApproval,
+      createdAt: nowIso()
+    });
+    return plan;
+  });
+}
+
+/**
+ * 记录一次“手”修改预览，并写入审计日志。
+ *
+ * 使用方法：
+ * - hand.ts 生成 HandPreview 后调用 recordHandPreview(preview)。
+ * - 如果同一个 preview id 已经存在，会覆盖旧内容。
+ *
+ * 作用：
+ * - 保存 diff、受影响目标、风险标记、是否可回滚和审批要求。
+ * - 让用户、大脑和未来记忆系统可以复盘动手前看到了什么。
+ */
+export async function recordHandPreview(preview: HandPreview): Promise<HandPreview> {
+  return mutate((store) => {
+    const index = store.handPreviews.findIndex((item) => item.id === preview.id);
+    if (index >= 0) {
+      store.handPreviews[index] = preview;
+    } else {
+      store.handPreviews.push(preview);
+    }
+    store.audit.push({
+      id: newId("aud"),
+      type: "hand.previewed",
+      handPlanId: preview.planId,
+      handPreviewId: preview.id,
+      handRiskLevel: preview.riskLevel,
+      riskFlags: preview.riskFlags,
+      approvalRequired: preview.requiresApproval,
+      createdAt: nowIso()
+    });
+    return preview;
+  });
+}
+
+/**
+ * 记录一次“手”修改结果，并写入审计日志。
+ *
+ * 使用方法：
+ * - apply、reject、fail 或 dry run 后调用 recordHandResult(result)。
+ * - 返回值会补上 auditId，供嘴巴和 UI 引用。
+ *
+ * 作用：
+ * - 保存真实修改结果、应用的 diff、变更目标和回滚可用性。
+ * - 只有 status 为 applied 的 HandResult 才表示对象真的被修改。
+ */
+export async function recordHandResult(result: HandResult): Promise<HandResult> {
+  return mutate((store) => {
+    const auditId = result.auditId || newId("aud");
+    const storedResult: HandResult = {
+      ...result,
+      auditId
+    };
+    const index = store.handResults.findIndex((item) => item.id === storedResult.id);
+    if (index >= 0) {
+      store.handResults[index] = storedResult;
+    } else {
+      store.handResults.push(storedResult);
+    }
+    store.audit.push({
+      id: auditId,
+      type: `hand.${storedResult.status}`,
+      handPlanId: storedResult.planId,
+      handPreviewId: storedResult.previewId,
+      handResultId: storedResult.id,
+      status: storedResult.status === "applied" ? "completed" : "failed",
+      createdAt: nowIso()
+    });
+    return storedResult;
+  });
+}
+
+/**
+ * 读取最近的“手”修改计划。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 调试页、审计页或 API 可以传入 limit 缩小返回数量。
+ *
+ * 作用：
+ * - 展示 Agent 最近准备修改的对象和风险等级。
+ * - 帮助确认修改没有绕过 HandPlan。
+ */
+export async function listHandPlans(limit = 100): Promise<HandPlan[]> {
+  const store = await readStore();
+  return store.handPlans.slice(-limit).reverse();
+}
+
+/**
+ * 读取最近的“手”修改预览。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 用于 UI 或调试流程查看 diff 和风险标记。
+ *
+ * 作用：
+ * - 展示手在修改前准备改什么。
+ * - 帮助确认所有写入都有 preview。
+ */
+export async function listHandPreviews(limit = 100): Promise<HandPreview[]> {
+  const store = await readStore();
+  return store.handPreviews.slice(-limit).reverse();
+}
+
+/**
+ * 读取最近的“手”修改结果。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 嘴巴、UI 或审计页可以用它确认修改是否 applied、rejected、failed 或 skipped。
+ *
+ * 作用：
+ * - 展示真实修改历史。
+ * - 为未来 Agent Core 的反思、回滚和 Skill 沉淀提供依据。
+ */
+export async function listHandResults(limit = 100): Promise<HandResult[]> {
+  const store = await readStore();
+  return store.handResults.slice(-limit).reverse();
 }
 
 /**

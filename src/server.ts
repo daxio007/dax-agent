@@ -12,6 +12,10 @@ import {
   listFootPlans,
   listFootPreviews,
   listFootResults,
+  listHandPlans,
+  listHandPreviews,
+  listHandResults,
+  recordHandResult,
   listListenEvents,
   listListenResults,
   listReadEvents,
@@ -32,6 +36,16 @@ import {
   executeAndRecordFootPlan,
   type CreateFootPlanInput
 } from "./lib/foot.js";
+import {
+  coerceHandAction,
+  coerceHandPlan,
+  applyHandPlan,
+  createHandPlan,
+  createHandPreview,
+  executeAndRecordHandPlan,
+  type ApplyHandPlanOptions,
+  type CreateHandPlanInput
+} from "./lib/hand.js";
 import { coerceReadSource, createReadPlan, executeAndRecordReadPlan } from "./lib/read.js";
 import { analyzeAndRecordListenEvent } from "./lib/listen.js";
 import {
@@ -50,6 +64,8 @@ import type {
   AppConfig,
   DeepPartial,
   FootPlan,
+  HandPlan,
+  HandPreview,
   JsonObject,
   ListenEventKind,
   ListenPrivacyLevel,
@@ -357,6 +373,144 @@ function footPlanFromBody(body: JsonObject): FootPlan {
  * - dryRun=true 会生成 skipped result，不启动真实进程。
  */
 function footExecutionOptionsFromBody(body: JsonObject): { approved?: boolean; dryRun?: boolean } {
+  return {
+    approved: optionalBoolean(body.approved),
+    dryRun: optionalBoolean(body.dryRun)
+  };
+}
+
+/**
+ * 从请求 body 中读取手部动作列表。
+ *
+ * 使用方法：
+ * - /api/hand/plan、/api/hand/preview、/api/hand/apply 和 /api/hand/execute 都通过它读取 actions。
+ *
+ * 作用：
+ * - 统一要求 actions 必须是非空数组。
+ * - 复用 hand.ts 的 coerceHandAction，确保 API 和核心模块使用同一套动作结构。
+ */
+function handActionsFromBody(body: JsonObject): ReturnType<typeof coerceHandAction>[] {
+  if (!Array.isArray(body.actions) || body.actions.length === 0) {
+    throw createHttpError("Hand request requires a non-empty actions array.");
+  }
+  return body.actions.map((action) => coerceHandAction(action));
+}
+
+/**
+ * 从请求 body 中读取手部计划输入。
+ *
+ * 使用方法：
+ * - /api/hand/plan 创建新 HandPlan 时调用。
+ * - /api/hand/preview、/api/hand/apply 和 /api/hand/execute 在没有传入 plan 对象时也调用。
+ *
+ * 作用：
+ * - 把外部 JSON 收敛成 createHandPlan 可以消费的结构。
+ * - API 层只负责轻量字段转换，风险推断仍由 hand.ts 完成。
+ */
+function handPlanInputFromBody(body: JsonObject): CreateHandPlanInput {
+  return {
+    goal: optionalString(body.goal),
+    reason: optionalString(body.reason),
+    actions: handActionsFromBody(body),
+    expectedOutcome: optionalString(body.expectedOutcome)
+  };
+}
+
+/**
+ * 从请求 body 中得到 HandPlan。
+ *
+ * 使用方法：
+ * - 调用方可以传完整 plan，也可以传 goal/reason/actions。
+ * - 传完整 plan 时使用 coerceHandPlan 保留 id，便于先 plan 后 preview/apply。
+ *
+ * 作用：
+ * - 让 hand API 支持三段式调用，也支持一次 execute 的简化调用。
+ */
+function handPlanFromBody(body: JsonObject): HandPlan {
+  const plan = optionalJsonObject(body.plan);
+  return plan ? coerceHandPlan(plan) : createHandPlan(handPlanInputFromBody(body));
+}
+
+/**
+ * 从请求 body 中读取 HandPreview。
+ *
+ * 使用方法：
+ * - /api/hand/apply 接收调用方传回的 preview 时调用。
+ *
+ * 作用：
+ * - 将外部 JSON 收敛成 applyHandPlan 需要的最小稳定结构。
+ * - 避免缺失 planId、actionPreviews 或 diff 的 preview 进入写入链路。
+ */
+function coerceHandPreviewFromBody(value: JsonObject): HandPreview {
+  if (!Array.isArray(value.actionPreviews)) {
+    throw createHttpError("Hand preview actionPreviews must be an array.");
+  }
+  const id = optionalString(value.id);
+  const planId = optionalString(value.planId);
+  if (!id || !planId) {
+    throw createHttpError("Hand preview requires id and planId.");
+  }
+  return {
+    id,
+    planId,
+    summary: optionalString(value.summary) || "Hand preview.",
+    affectedTargets: optionalStringArray(value.affectedTargets) || [],
+    actionPreviews: value.actionPreviews.map((item) => {
+      const preview = optionalJsonObject(item);
+      if (!preview) throw createHttpError("Hand action preview must be an object.");
+      const actionId = optionalString(preview.actionId);
+      const target = optionalString(preview.target);
+      if (!actionId || !target) throw createHttpError("Hand action preview requires actionId and target.");
+      return {
+        actionId,
+        target,
+        beforeHash: optionalString(preview.beforeHash),
+        afterHash: optionalString(preview.afterHash),
+        beforeBytes: optionalPositiveNumber(preview.beforeBytes) || 0,
+        afterBytes: optionalPositiveNumber(preview.afterBytes) || 0,
+        diff: optionalString(preview.diff) || "",
+        riskFlags: optionalStringArray(preview.riskFlags) || [],
+        reversible: Boolean(preview.reversible),
+        rollbackStrategy:
+          preview.rollbackStrategy === "snapshot" ||
+          preview.rollbackStrategy === "reverse_patch" ||
+          preview.rollbackStrategy === "external_revision" ||
+          preview.rollbackStrategy === "adapter_defined"
+            ? preview.rollbackStrategy
+            : "none",
+        summary: optionalString(preview.summary) || target
+      };
+    }),
+    diff: optionalString(value.diff) || "",
+    reversible: Boolean(value.reversible),
+    rollbackStrategy:
+      value.rollbackStrategy === "snapshot" ||
+      value.rollbackStrategy === "reverse_patch" ||
+      value.rollbackStrategy === "external_revision" ||
+      value.rollbackStrategy === "adapter_defined"
+        ? value.rollbackStrategy
+        : "none",
+    riskLevel:
+      value.riskLevel === "H0" || value.riskLevel === "H1" || value.riskLevel === "H2" || value.riskLevel === "H3"
+        ? value.riskLevel
+        : "H3",
+    riskFlags: optionalStringArray(value.riskFlags) || [],
+    requiresApproval: Boolean(value.requiresApproval),
+    createdAt: optionalString(value.createdAt) || new Date().toISOString()
+  };
+}
+
+/**
+ * 从请求 body 中读取手部执行选项。
+ *
+ * 使用方法：
+ * - /api/hand/apply 和 /api/hand/execute 读取 approved 和 dryRun 时调用。
+ *
+ * 作用：
+ * - 明确 approved=true 表示调用方已经完成审批。
+ * - dryRun=true 会生成 skipped result，不写入文件。
+ */
+function handApplyOptionsFromBody(body: JsonObject): ApplyHandPlanOptions {
   return {
     approved: optionalBoolean(body.approved),
     dryRun: optionalBoolean(body.dryRun)
@@ -729,6 +883,61 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
   if (method === "GET" && (url.pathname === "/api/speak-results" || url.pathname === "/api/speak/results")) {
     const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
     sendJson(res, 200, await listSpeakResults(limit));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/hand/plan") {
+    const body = await readBody(req);
+    sendJson(res, 201, createHandPlan(handPlanInputFromBody(body)));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/hand/preview") {
+    const body = await readBody(req);
+    const config = await loadConfig();
+    sendJson(res, 201, await createHandPreview(handPlanFromBody(body), config));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/hand/apply") {
+    const body = await readBody(req);
+    const plan = handPlanFromBody(body);
+    const preview = optionalJsonObject(body.preview);
+    if (!preview) {
+      throw createHttpError("Hand apply requires preview.");
+    }
+    sendJson(
+      res,
+      200,
+      await recordHandResult(
+        await applyHandPlan(plan, coerceHandPreviewFromBody(preview), handApplyOptionsFromBody(body), await loadConfig())
+      )
+    );
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/hand/execute") {
+    const body = await readBody(req);
+    const config = await loadConfig();
+    sendJson(res, 200, await executeAndRecordHandPlan(handPlanFromBody(body), handApplyOptionsFromBody(body), config));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/hand-plans" || url.pathname === "/api/hand/plans")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listHandPlans(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/hand-previews" || url.pathname === "/api/hand/previews")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listHandPreviews(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/hand-results" || url.pathname === "/api/hand/results")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listHandResults(limit));
     return;
   }
 

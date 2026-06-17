@@ -2,7 +2,7 @@
 
 最后更新：2026-06-17
 
-这份文档设计 DAX Agent 的“手”能力，也就是这个孩子第一次真正开始改变世界的能力。当前只做设计，不实现运行时。
+这份文档设计 DAX Agent 的“手”能力，也就是这个孩子第一次真正开始改变世界的能力。当前文档同时描述第一阶段边界和完整版目标；第一阶段运行时先从 workspace 文件修改开始，完整版会扩展成所有修改行为的统一安全执行层。
 
 在“小孩模型”里，眼睛负责看，耳朵负责听，嘴巴负责表达，大脑负责判断和调度。手负责对对象进行可审计、可预览、可控制的修改。
 
@@ -225,6 +225,264 @@ MCP write tool
 - 系统设置。
 
 第一版不实现，因为 GUI 状态修改更难预览和回滚。
+
+## 完整版手能力目标
+
+第一版手是“会安全写文件”。完整版手应该是“所有修改行为的统一安全执行层”。
+
+完整版不应该只问：
+
+```text
+能不能写文件？
+```
+
+而应该问：
+
+```text
+这个修改对象是什么？
+这个对象由哪个 adapter 管？
+修改前能不能预览？
+修改后能不能验证？
+失败后能不能回滚？
+是否会影响外部世界？
+是否会影响隐私或凭证？
+```
+
+因此完整版手能力的目标是：
+
+- 统一所有修改对象。
+- 统一所有修改动作。
+- 统一 preview。
+- 统一 policy gate。
+- 统一 apply。
+- 统一 result。
+- 统一 rollback。
+- 统一 audit。
+- 统一和大脑、嘴巴、脚、记忆、Skill、MCP 的关系。
+
+核心不变：
+
+```text
+HandPlan -> HandPreview -> PolicyGate -> HandResult -> Audit
+```
+
+这条链不能因为对象从文件变成 GitHub issue、Notion 页面、日历事件或浏览器表单而消失。
+
+## 完整版对象模型
+
+第一版只有 workspace 文件。完整版应该把可修改对象抽象成 `HandTarget`。
+
+建议目标类型：
+
+- `workspace_file`：workspace 内文件。
+- `document`：用户指定文档，如 Markdown、TXT、未来 Word/Excel/PPT。
+- `config`：项目或运行时配置。
+- `external_object`：GitHub issue、PR、Notion 页面、日历事件等。
+- `database_record`：本地或外部数据库记录。
+- `application_state`：应用内状态。
+- `browser_state`：浏览器表单、DOM 可编辑区域、页面状态。
+- `clipboard`：剪贴板。
+- `message_draft`：邮件、IM、公开发布草稿。
+
+这些对象不应该由一个巨大的 `if/else` 直接处理，而应该交给 adapter。
+
+## 完整版 Adapter 设计
+
+完整版手能力需要 adapter 层。
+
+建议 adapter：
+
+- `WorkspaceFileHandAdapter`
+- `DocumentHandAdapter`
+- `ConfigHandAdapter`
+- `BrowserStateHandAdapter`
+- `ClipboardHandAdapter`
+- `GitHubHandAdapter`
+- `NotionHandAdapter`
+- `CalendarHandAdapter`
+- `DatabaseRecordHandAdapter`
+- `MessageDraftHandAdapter`
+
+每个 adapter 至少回答：
+
+- 是否支持这个 target。
+- 如何读取当前状态。
+- 如何生成 preview。
+- 如何应用修改。
+- 如何验证修改结果。
+- 是否支持 rollback。
+- rollback 需要保存什么。
+- 这个目标有哪些风险标记。
+
+抽象关系：
+
+```text
+HandAction
+-> Target Resolver
+-> HandAdapter
+-> AdapterPreview
+-> PolicyGate
+-> AdapterApply
+-> HandResult
+```
+
+模型不能直接选择底层写入工具。模型只能提出意图或 `ActionProposal`，大脑和手共同选择 adapter。
+
+## 完整版动作模型
+
+第一版只需要 `create_file`、`update_file` 和结构化 `apply_patch`。完整版动作应该扩展为：
+
+- `create`
+- `update`
+- `patch`
+- `delete`
+- `move`
+- `rename`
+- `append`
+- `replace_range`
+- `structured_update`
+- `create_draft`
+- `update_external_object`
+- `update_database_record`
+- `update_application_state`
+
+动作必须是结构化的。不要让模型直接塞一段任意脚本表达“怎么改”。如果动作无法结构化，就应该停在草稿或 H3 审批状态。
+
+## 完整版回滚设计
+
+第一版只证明“改了什么”。完整版必须回答“能不能撤销”。
+
+每个 `HandPreview` 应该声明：
+
+- 是否可回滚。
+- 回滚策略是什么。
+- 是否保存 before snapshot。
+- 是否依赖外部对象 revision。
+- 是否需要用户再次确认回滚。
+- 哪些部分不可回滚。
+
+建议 `rollbackStrategy`：
+
+- `none`：不可回滚。
+- `snapshot`：保存修改前快照。
+- `reverse_patch`：生成反向 patch。
+- `external_revision`：依赖外部对象版本。
+- `adapter_defined`：由 adapter 自己定义。
+
+对于不可回滚或不确定可回滚的修改，风险至少 H2；如果还涉及删除、外部系统、隐私或公开发布，应为 H3。
+
+## 完整版和脚的协作
+
+很多修改后需要验证。
+
+典型流程：
+
+```text
+手：修改源码
+脚：运行 typecheck / test / build
+嘴巴：汇报修改和验证结果
+```
+
+所以完整版 `HandResult` 可以产生 `suggestedFootPlan`：
+
+- 修改 TypeScript 后建议运行 typecheck。
+- 修改测试后建议运行测试。
+- 修改 package 配置后建议运行安装或 build，但这通常风险更高。
+- 修改文档时可能不需要脚验证。
+
+手不能自己运行命令。手只能建议脚。
+
+## 完整版和大脑的关系
+
+完整手不能直接被模型调用。
+
+标准路径：
+
+```text
+ListenResult
+-> ReadPlan / ContextBlock
+-> AgentDecision
+-> ActionProposal
+-> HandPlan
+-> HandPreview
+-> PolicyGateResult
+-> HandResult
+```
+
+大脑负责“为什么要改、是否值得改、是否符合用户目标”。手负责“如何安全改、如何证明改了、失败时怎么停”。
+
+如果没有 Agent Core，手可以先通过 HTTP API 独立工作；但这只是第一阶段调试入口，不是最终主流程。
+
+## 完整版和记忆的关系
+
+手的结果很适合进入 Episode Memory。
+
+完整版应该沉淀：
+
+- 修改目标。
+- 修改原因。
+- 预览摘要。
+- 风险标记。
+- 用户是否审批。
+- 修改结果。
+- 是否验证。
+- 是否回滚。
+- 是否形成可复用 Skill。
+
+但不应该沉淀：
+
+- 密钥原文。
+- 私密文档全文。
+- 超大 diff。
+- 外部对象的敏感字段。
+
+## 完整版和 Skill 的关系
+
+Skill 不能直接动手。Skill 只能描述一个可复用方法。
+
+例如：
+
+```yaml
+required_hand:
+  target_kinds:
+    - workspace_file
+  action_kinds:
+    - create
+    - update
+    - patch
+  requires_preview: true
+  forbidden_targets:
+    - .env
+    - config/local.json
+  suggested_foot_after_apply:
+    - npm run typecheck
+```
+
+大脑加载 Skill 后，仍然要生成 `ActionProposal`，再由手生成 `HandPlan`。
+
+## 完整版安全等级
+
+H0-H3 可以保留，但完整版风险应由多维因素综合推导：
+
+- 对象类型。
+- 动作类型。
+- 修改规模。
+- 是否可回滚。
+- 是否触碰隐私。
+- 是否触碰密钥。
+- 是否影响外部系统。
+- 是否公开发布。
+- 是否需要脚验证。
+- 是否存在 dirty workspace。
+- 是否存在 preview 冲突。
+
+这意味着同一个动作在不同目标上风险不同：
+
+- 更新 README：可能 H1。
+- 更新源码逻辑：通常 H2。
+- 更新 `.env`：H3。
+- 更新 GitHub issue 草稿：H2。
+- 公开发布 GitHub release：H3，而且可能应该属于 Channel send 或 Release 能力协作。
 
 ## 手的分级
 
@@ -614,11 +872,11 @@ MCP draft creation -> H2/H3 depending on target
 - 经过 Policy Gate。
 - 写入 audit。
 
-## 第一阶段设计边界
+## 第一阶段实现边界
 
-第一阶段只设计手，不实现完整运行时。
+第一阶段运行时已经开始落地，但仍然不是完整手能力。当前第一阶段只实现 workspace 内文本文件创建、更新和结构化 `apply_patch`，并保留完整版对象模型和 adapter 扩展位。
 
-后续实现第一阶段可以做：
+第一阶段已经实现或应该保持的能力：
 
 - `HandPlan` 类型。
 - `HandAction` 类型。
@@ -633,7 +891,7 @@ MCP draft creation -> H2/H3 depending on target
   - `POST /api/hand/preview`
   - `POST /api/hand/apply`
   - `GET /api/hand-results`
-- 让 Agent Core 只生成 `ActionProposal`，再由手转换成 `HandPlan`。
+- 让 Agent Core 未来只生成 `ActionProposal`，再由手转换成 `HandPlan`。
 
 暂不实现：
 
@@ -658,8 +916,9 @@ MCP draft creation -> H2/H3 depending on target
 7. 让 Agent Core 的 `ActionProposal` 能转成 `HandPlan`。
 8. 在嘴巴汇报里引用真实 `HandResult`。
 9. 增加 H2/H3 审批策略。
-10. 再设计“脚/执行能力”。
-11. 之后再设计外部对象修改和 MCP write tool adapter。
+10. 增加 rollback 记录和回滚入口。
+11. 增加 adapter 层，让外部对象、文档、浏览器状态和数据库记录都经过手能力。
+12. 之后再设计 MCP write tool adapter。
 
 ## 设计原则
 
@@ -692,4 +951,4 @@ MCP draft creation -> H2/H3 depending on target
 - 失败怎么停止。
 - 经验怎么沉淀。
 
-第一版手先从 workspace 写入和 patch 开始，是最稳的路径。等手能可靠地创建、修改、预览和审计本地文件之后，再去设计脚、外部对象和更复杂的 MCP 写入能力。
+第一版手先从 workspace 写入和 patch 开始，是最稳的路径。等手能可靠地创建、修改、预览和审计本地文件之后，再扩展 rollback、adapter、外部对象和更复杂的 MCP 写入能力。
