@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-学习型 MVP，当前已经完成“读/眼睛”“听/耳朵”和“嘴巴/表达”的第一阶段运行时。读和听已经推送到 `main` 分支，嘴巴运行时本轮刚实现，等待后续提交。
+学习型 MVP，当前已经完成“读/眼睛”“听/耳朵”和“嘴巴/表达”的第一阶段运行时。读和听已经推送到 `main` 分支，嘴巴运行时、大脑设计和手能力设计已经在本地提交。
 
 当前最重要的目标不是继续堆功能，而是先理解并实现 Agent 收到自然语言后的行为模型，并设计最小大脑 Agent Core。
 
@@ -29,15 +29,17 @@
 7. 已完成嘴巴能力第一阶段运行时：SpeakPlan、SpeakMessage、SpeakResult、speak API、assistant 消息入口接入。
 8. 已完成 `docs/agent-core-design.md`：最小大脑设计，明确模型思考器、代码边界、工作记忆、记忆策略、能力路由和 Policy Gate。
 9. 已完成 `docs/hand-capability-design.md`：手/修改能力设计，明确 HandPlan、HandAction、HandPreview、HandResult、H0-H3 分级、diff preview 和审批边界。
-10. 下一步：实现 Agent Core 第一阶段类型和骨架。
-11. 再让自然语言 Agent Core 根据 ListenResult 判断何时需要读取，并自动生成/执行 ReadPlan。
-12. 再把 ContextBlock 注入 Agent Core 的工作上下文。
-13. 再让 SpeakPlan 承接 AgentDecision，把回答、追问、计划、结果汇报和草稿统一成表达层。
-14. 再实现手能力第一阶段：workspace patch preview / apply / audit。
-15. 之后再设计 Skill 文件格式和 Skill Index。
-16. 设计 MCP Client Manager 如何接入现有 toolRuns 审批系统。
-17. 设计 Episode Store，用来记录一次完整任务经历。
-18. 设计 Skill Distiller，把成功经验整理成 draft Skill。
+10. 已完成 `docs/hand-capability-implementation-plan.md`：手能力第一阶段实现设计，明确类型、方法、API、审计、验证计划和 JSDoc 要求。
+11. 下一步：实现手能力第一阶段类型和 `src/lib/hand.ts`，先跑通 workspace patch preview / apply / audit。
+12. 再实现 Agent Core 第一阶段类型和骨架。
+13. 再让自然语言 Agent Core 根据 ListenResult 判断何时需要读取，并自动生成/执行 ReadPlan。
+14. 再把 ContextBlock 注入 Agent Core 的工作上下文。
+15. 再让 SpeakPlan 承接 AgentDecision，把回答、追问、计划、结果汇报和草稿统一成表达层。
+16. 再把手能力接入 Agent Core 的 `ActionProposal -> HandPlan`。
+17. 之后再设计 Skill 文件格式和 Skill Index。
+18. 设计 MCP Client Manager 如何接入现有 toolRuns 审批系统。
+19. 设计 Episode Store，用来记录一次完整任务经历。
+20. 设计 Skill Distiller，把成功经验整理成 draft Skill。
 
 ## 未来工作
 
@@ -72,3 +74,4 @@
 - Speak Capability、SpeakPlan、SpeakMessage、草稿、受众和表达边界。
 - Agent Core、Model Reasoner、AgentDecision、Working Memory、MemoryDecision 和 Policy Gate。
 - Hand Capability、HandPlan、HandPreview、Patch、H0-H3 修改风险和审批边界。
+- Hand Implementation、workspace write、unified diff、hash guard、HandResult 和 JSDoc 规范。

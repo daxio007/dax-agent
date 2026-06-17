@@ -17,6 +17,7 @@
 - 嘴巴/表达第一阶段运行时已完成。嘴巴不应限制内容形态，而应控制受众、身份、外部影响、事实透明度和隐私边界。嘴巴可以回答、解释、追问、计划、汇报和生成草稿，但不能把草稿当发送、把计划当执行，或代表用户对外产生影响。
 - 2026-06-17 开始设计“大脑/Agent Core”。大脑不应全靠硬编码规则，也不应完全交给模型；模型负责思考和方案生成，代码负责骨架、边界、调度、schema 校验、Policy Gate 和审计。第一版大脑应支持低等级模型作为日常 Model Reasoner，高级模型只是未来可选升级。
 - 2026-06-17 开始设计“手/修改”能力。手是第一类行动器，负责对本地或外部对象进行可审计、可预览、可确认的修改。第一版手应收窄到 workspace 写入和 patch，外部对象、数据库、GUI 应用和发送消息暂不实现。
+- 2026-06-17 明确手能力代码实现也必须先写实现设计文档，再写运行时代码。后续每个 exported 方法，以及涉及路径、安全、风险、diff、hash、写入的关键内部 helper，都必须有详细 JSDoc，解释使用方法、作用和边界。
 
 ## 产品目标
 
@@ -36,7 +37,7 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 
 第一版已经迁移为 TypeScript-first 的 Node.js 本地应用。
 
-截至 2026-06-17，“读/眼睛”“听/耳朵”和“嘴巴/表达”的第一阶段运行时已经完成。读和听已经推送到 `main` 分支；嘴巴运行时本轮刚实现，等待后续提交。后续讨论和开发应把这三项能力视为当前基线，而不是待设计事项。
+截至 2026-06-17，“读/眼睛”“听/耳朵”和“嘴巴/表达”的第一阶段运行时已经完成。读和听已经推送到 `main` 分支；嘴巴运行时、大脑设计和手能力设计已经在本地提交。后续讨论和开发应把这三项能力视为当前基线，而不是待设计事项。
 
 主要模块：
 
@@ -60,6 +61,7 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 - `docs/listen-capability-design.md`：DAX Agent 的第二类感官，也就是听能力设计。
 - `docs/speak-capability-design.md`：DAX Agent 的第三类表达器，也就是嘴巴能力设计。
 - `docs/hand-capability-design.md`：DAX Agent 的第一类行动器，也就是手能力设计。
+- `docs/hand-capability-implementation-plan.md`：手能力第一阶段代码实现设计，规定类型、方法、API、审计、验证计划和 JSDoc 要求。
 - `docs/read-capability-implementation.md`：读能力第一阶段运行时实现记录。
 - `docs/listen-capability-implementation.md`：听能力第一阶段运行时实现记录。
 - `docs/speak-capability-implementation.md`：嘴巴能力第一阶段运行时实现记录。
@@ -133,6 +135,7 @@ http://127.0.0.1:18789
 - `docs/listen-capability-design.md`：听能力、ListenEvent、ListenResult、Intent、Constraint、Correction 和 Context Need。
 - `docs/speak-capability-design.md`：嘴巴能力、SpeakPlan、SpeakMessage、SpeakResult、受众、草稿和表达边界。
 - `docs/hand-capability-design.md`：手能力、HandPlan、HandAction、HandPreview、HandResult、diff preview 和审批边界。
+- `docs/hand-capability-implementation-plan.md`：手能力第一阶段实现设计，尤其是 workspace 写入、preview、apply、audit 和方法 JSDoc 规范。
 - `docs/read-capability-implementation.md`：读能力代码入口、API、验证结果和当前边界。
 - `docs/listen-capability-implementation.md`：听能力代码入口、API、验证结果和当前边界。
 - `docs/speak-capability-implementation.md`：嘴巴能力代码入口、API、验证结果和当前边界。
@@ -303,3 +306,15 @@ http://127.0.0.1:18789
 - 手的分级为 H0-H3：H0 不修改，H1 低风险可自动，H2 中风险需要 preview，H3 高风险必须审批。
 - 手优先使用 diff/patch，修改前预览，修改后记录结果和 audit。
 - 手不能绕过大脑和 Policy Gate；大脑先生成 `ActionProposal`，手再转成 `HandPlan`。
+
+## 2026-06-17 手能力第一阶段实现设计
+
+本轮新增 `docs/hand-capability-implementation-plan.md`，把“手/修改”第一阶段应该如何落到代码里先设计清楚，暂时不写运行时代码。
+
+设计结论：
+- 第一阶段只实现 workspace 内文本文件创建、更新和结构化 patch apply，不实现删除、移动、外部对象、数据库、GUI 或发送消息。
+- 第一阶段采用 `HandPlan -> HandPreview -> HandResult` 三段式，所有写入必须先有 preview。
+- `apply_patch` 第一阶段不是解析任意手写 unified diff，而是应用 DAX Agent 已结构化生成、绑定目标内容 hash 的文本修改。
+- 后续要在 `src/lib/types.ts` 增加 Hand 类型，在 `src/lib/hand.ts` 新增核心，在 `src/lib/store.ts` 增加持久化和 audit，在 `src/server.ts` 增加 hand API。
+- 每个 exported 方法，以及涉及路径、安全、风险、diff、hash、写入的关键内部 helper，都必须写 JSDoc，说明使用方法、作用和边界。
+- 第一阶段手能力先作为独立 capability 和 HTTP API 跑通，暂时不接入 `src/lib/agent.ts` 自然语言主流程；等 Agent Core 第一阶段出现后，再接 `ActionProposal -> HandPlan`。

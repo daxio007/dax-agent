@@ -101,3 +101,9 @@
 - Codex 建议把手定义为第一类行动器，先收窄到 workspace 写入和 patch，并强调手会改变世界，所以需要 diff preview、风险分级、审批和审计。
 - 用户同意设计手能力，并要求本轮修改后把前面嘴巴运行时和大脑设计一起提交。
 - Codex 新增 `docs/hand-capability-design.md`，覆盖手和嘴巴/脚/眼睛/大脑/MCP 的边界、H0-H3 分级、HandPlan、HandAction、HandPreview、HandResult、diff preview、审批策略、记忆沉淀和未来实现顺序。
+- 用户提醒：应该先写设计文档再写代码，并再次强调每个方法都要写 doc 解释使用方法和作用，让代码清晰明了。
+- Codex 新增 `docs/hand-capability-implementation-plan.md`，把手能力第一阶段代码实现方案先落成文档。
+- 该文档明确第一阶段只实现 workspace 内文本文件创建、更新和结构化 patch apply，不实现删除、移动、外部对象、数据库、GUI 或发送消息。
+- 文档规定后续实现必须采用 `HandPlan -> HandPreview -> HandResult` 三段式，所有写入先 preview，再 policy gate，再 apply 和 audit。
+- 文档明确 `src/lib/hand.ts` 中每个 exported 方法，以及涉及路径、安全、风险、diff、hash、写入的关键内部 helper，都必须写 JSDoc，说明使用方法、作用和边界。
+- 当前下一步应根据这份实现设计开始写手能力第一阶段代码，先作为独立 capability 和 HTTP API 跑通，再等待 Agent Core 接入。

@@ -95,6 +95,7 @@ Web 控制台现在支持中文和英文界面：
 - `docs/listen-capability-design.md`
 - `docs/speak-capability-design.md`
 - `docs/hand-capability-design.md`
+- `docs/hand-capability-implementation-plan.md`
 - `docs/read-capability-implementation.md`
 - `docs/listen-capability-implementation.md`
 - `docs/speak-capability-implementation.md`
