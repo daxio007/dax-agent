@@ -1,31 +1,33 @@
 # 路线图
 
-最后更新：2026-06-16
+最后更新：2026-06-17
 
 ## 当前阶段
 
-学习型 MVP。
+学习型 MVP，当前正在把“读/眼睛”能力从设计落到运行时。
 
 当前最重要的目标不是继续堆功能，而是先理解并实现 Agent 收到自然语言后的行为模型。
 
 当前已支持中文/英文界面切换，默认中文。
 
-当前新增设计方向：先围绕 MCP 和 Skill 建立 DAX Agent 的按需学习模型。实现不急，先把“小孩模型”写清楚。
+当前新增设计方向：先围绕 MCP 和 Skill 建立 DAX Agent 的按需学习模型。第一阶段先把“小孩模型”里的眼睛实现出来。
 
 项目实现语言已明确为 TypeScript-first，不使用 Python。
 
 ## 下一优先级
 
-先完成 MCP + Skill + Memory 的学习模型设计，再回到 Natural Language Operation Protocol 的代码实现。
+先完成读能力第一阶段，再让 Natural Language Operation Protocol 能按需要触发 ReadPlan。
 
 计划工作：
 
-1. 完成 `docs/agent-learning-model.md`。
-2. 设计 Skill 文件格式和 Skill Index。
-3. 设计 MCP Client Manager 如何接入现有 toolRuns 审批系统。
-4. 设计 Episode Store，用来记录一次完整任务经历。
-5. 设计 Skill Distiller，把成功经验整理成 draft Skill。
-6. 再实现 Natural Language Operation Protocol 的代码层。
+1. 已完成 `docs/agent-learning-model.md`。
+2. 已完成 `docs/read-capability-design.md`。
+3. 已完成读能力第一阶段运行时：ReadPlan、ReadResult、ContextBlock、ReadEvent、read API。
+4. 下一步：让自然语言 Agent Core 判断何时需要读取，并生成 ReadPlan。
+5. 之后再设计 Skill 文件格式和 Skill Index。
+6. 设计 MCP Client Manager 如何接入现有 toolRuns 审批系统。
+7. 设计 Episode Store，用来记录一次完整任务经历。
+8. 设计 Skill Distiller，把成功经验整理成 draft Skill。
 
 ## 未来工作
 
@@ -55,3 +57,4 @@
 - Audit 和 Safety。
 - MCP 与 Skill 分层。
 - 按需学习和程序性记忆。
+- Read Capability、Context Filter 和 MCP resources。

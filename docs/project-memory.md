@@ -1,6 +1,6 @@
 # 项目记忆
 
-最后更新：2026-06-16
+最后更新：2026-06-17
 
 这个文件是 DAX Agent 的长期记忆。它用来保存那些应该跨越长对话、上下文压缩和未来开发会话继续有效的重要信息。
 
@@ -12,6 +12,7 @@
 - 学习笔记、设计说明和项目记忆优先使用中文。代码、API 名称、文件名和技术标识可以继续使用英文。
 - 用户提出 DAX Agent 可以被理解成一个“刚出生的小孩”：MCP 是感官和手脚，电脑磁盘是海马体式记忆空间，Skill 是被消化后的做事方法。当前阶段先写设计，不急着实现运行时。
 - 用户不希望项目用 Python 实现。项目方向已明确为 TypeScript-first。
+- 当前正在专注完善“读/眼睛”能力设计；不要提前展开其他能力。眼睛可以读文档、网页、电脑配置、应用内容、沟通内容、日历任务、结构化资源和自身记忆。读动作默认不需要逐次审批，但要记录来源、标记风险、控制读取量并过滤上下文。
 
 ## 产品目标
 
@@ -45,6 +46,7 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 - `dist/`：TypeScript 编译后的后端运行产物。
 - `README.zh-CN.md`：中文项目说明。
 - `docs/agent-learning-model.md`：DAX Agent 的小孩模型、MCP/Skill 分层和按需学习设计。
+- `docs/read-capability-design.md`：DAX Agent 的第一类感官，也就是安全读能力设计。
 
 运行目标：
 
@@ -107,8 +109,29 @@ http://127.0.0.1:18789
 - `docs/project-memory.md`：长期上下文、用户偏好、当前状态。
 - `docs/design-notes.md`：架构和设计说明。
 - `docs/agent-learning-model.md`：MCP、Skill、记忆和按需学习模型。
+- `docs/read-capability-design.md`：读能力、Read Plan、Context Filter 和 MCP resource 映射。
 - `docs/decision-log.md`：按时间记录关键决策和原因。
 - `docs/roadmap.md`：下一步开发计划和优先级。
 - `docs/conversation-log.md`：简洁的对话摘要。
 
 不要记录密钥、API key、私有凭证，也不要记录没有必要的逐字聊天全文。
+
+## 2026-06-17 读能力第一阶段实现
+
+本轮根据 `docs/read-capability-design.md` 开始实现“读/眼睛”能力，但仍然只实现读取，不设计写入、执行、发送消息或自动化动作。
+
+已实现：
+- `src/lib/types.ts` 新增 `ReadSource`、`ReadPlan`、`ReadResult`、`ContextBlock`、`ReadEvent` 等统一类型。
+- `src/lib/read.ts` 新增读取核心，每个方法都有 JSDoc，说明使用方法和作用。
+- `src/lib/store.ts` 新增 `recordReadEvent()` 和 `listReadEvents()`，把读取事件纳入持久化和 audit。
+- `src/server.ts` 新增 `POST /api/read/plan`、`POST /api/read/execute`、`GET /api/read-events`。
+- `docs/read-capability-implementation.md` 记录第一阶段实现边界、入口、风险标记和验证结果。
+
+当前支持读取本地文件、文档、workspace 路径、memory/runtime 文件、网页、电脑配置和 workspace 搜索。`app_content`、`communication`、`calendar_task`、`mcp_resource`、`app_state` 只保留类型和错误提示，等待后续 connector 或 MCP adapter。
+
+验证结果：
+- `npm run typecheck` 通过。
+- `npm run build` 通过。
+- 编译后读取核心可读取 `README.md` 和电脑配置。
+- HTTP API `/api/read/execute` 可返回 `ReadResult` 和 `ContextBlock`。
+- `/api/read-events` 可返回最近读取事件。

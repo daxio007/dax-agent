@@ -9,13 +9,15 @@ import {
   deleteSession,
   getSession,
   listAudit,
+  listReadEvents,
   listSessions,
   listToolRuns,
   updateToolRun
 } from "./lib/store.js";
 import { processUserMessage } from "./lib/agent.js";
 import { executeToolRun } from "./lib/tools.js";
-import type { AppConfig, DeepPartial, JsonObject } from "./lib/types.js";
+import { coerceReadSource, createReadPlan, executeAndRecordReadPlan } from "./lib/read.js";
+import type { AppConfig, DeepPartial, JsonObject, ReadPlan, ReadSource } from "./lib/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "..", "public");
@@ -74,6 +76,112 @@ async function readBody(req: IncomingMessage): Promise<JsonObject> {
     error.statusCode = 400;
     throw error;
   }
+}
+
+/**
+ * 创建一个带 HTTP 状态码的错误。
+ *
+ * 使用方法：
+ * - API 参数校验失败时调用 createHttpError("message", 400)。
+ * - handleRequest 会读取 statusCode 并返回对应 JSON 响应。
+ *
+ * 作用：
+ * - 避免每个路由重复创建 Error 并手动挂 statusCode。
+ * - 让新增的 read API 和现有错误处理保持同一风格。
+ */
+function createHttpError(message: string, statusCode = 400): HttpError {
+  const error: HttpError = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+/**
+ * 从 unknown 中读取可选字符串。
+ *
+ * 使用方法：
+ * - read API 从 JSON body 中提取 goal、reason 等字段时调用。
+ *
+ * 作用：
+ * - 避免把 undefined、null 或对象误当成字符串。
+ * - 保持 API 入参处理简单清楚。
+ */
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * 从 unknown 中读取可选正数。
+ *
+ * 使用方法：
+ * - read API 处理 maxBytes、maxFiles 这类边界参数时调用。
+ *
+ * 作用：
+ * - 保证读取计划中的数量参数不会变成 NaN、负数或 0。
+ */
+function optionalPositiveNumber(value: unknown): number | undefined {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? Math.floor(numberValue) : undefined;
+}
+
+/**
+ * 从 unknown 中读取字符串数组。
+ *
+ * 使用方法：
+ * - read API 处理 expectedSignals 时调用。
+ *
+ * 作用：
+ * - 让调用方既可以不传 expectedSignals，也可以传字符串数组。
+ * - 自动过滤空字符串和非字符串值。
+ */
+function optionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
+}
+
+/**
+ * 从请求 body 中解析 ReadSource 列表。
+ *
+ * 使用方法：
+ * - /api/read/plan 和 /api/read/execute 都调用它。
+ *
+ * 作用：
+ * - 统一校验 sources 必须是非空数组。
+ * - 复用 read.ts 中的 coerceReadSource，保证 API 和内部代码同一套来源结构。
+ */
+function readSourcesFromBody(body: JsonObject): ReadSource[] {
+  if (!Array.isArray(body.sources) || body.sources.length === 0) {
+    throw createHttpError("Read request requires a non-empty sources array.");
+  }
+  return body.sources.map((source) => coerceReadSource(source));
+}
+
+/**
+ * 从请求 body 中构造 ReadPlan。
+ *
+ * 使用方法：
+ * - API 收到读取请求后，把 body 和当前 config 传入。
+ * - 如果 body 带有 id 或 createdAt，会保留它们，方便先 plan 后 execute。
+ *
+ * 作用：
+ * - 让 /api/read/plan 和 /api/read/execute 使用同一套计划创建逻辑。
+ * - 固定 no_per_read_approval、风险推断和读取边界。
+ */
+function readPlanFromBody(body: JsonObject, config: AppConfig): ReadPlan {
+  const plan = createReadPlan(
+    {
+      goal: optionalString(body.goal) || "Read context for the current task.",
+      reason: optionalString(body.reason) || "The task needs additional context.",
+      sources: readSourcesFromBody(body),
+      maxBytes: optionalPositiveNumber(body.maxBytes),
+      maxFiles: optionalPositiveNumber(body.maxFiles),
+      allowNetwork: body.allowNetwork === undefined ? undefined : Boolean(body.allowNetwork),
+      expectedSignals: optionalStringArray(body.expectedSignals)
+    },
+    config
+  );
+  if (typeof body.id === "string" && body.id.trim()) plan.id = body.id.trim();
+  if (typeof body.createdAt === "string" && body.createdAt.trim()) plan.createdAt = body.createdAt.trim();
+  return plan;
 }
 
 async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -193,6 +301,26 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
 
   if (method === "GET" && url.pathname === "/api/tool-runs") {
     sendJson(res, 200, await listToolRuns(url.searchParams.get("sessionId")));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/read/plan") {
+    const body = await readBody(req);
+    sendJson(res, 201, readPlanFromBody(body, await loadConfig()));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/read/execute") {
+    const body = await readBody(req);
+    const config = await loadConfig();
+    const plan = readPlanFromBody(body, config);
+    sendJson(res, 200, await executeAndRecordReadPlan(plan, config));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/read-events" || url.pathname === "/api/read/events")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listReadEvents(limit));
     return;
   }
 

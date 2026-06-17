@@ -6,6 +6,7 @@ import type {
   JsonObject,
   Message,
   MessageRole,
+  ReadEvent,
   Session,
   SessionDetail,
   SessionSummary,
@@ -23,6 +24,7 @@ function emptyStore(): Store {
     sessions: [],
     messages: [],
     toolRuns: [],
+    readEvents: [],
     audit: []
   };
 }
@@ -229,4 +231,55 @@ export async function updateToolRun(
 export async function listAudit(limit = 100): Promise<AuditRecord[]> {
   const store = await readStore();
   return store.audit.slice(-limit).reverse();
+}
+
+/**
+ * 记录一次“眼睛”读取事件，并同时写入审计日志。
+ *
+ * 使用方法：
+ * - 读取文件、网页、电脑配置或未来 MCP resource 后调用。
+ * - 传入读取来源、读取原因、风险等级和风险标记。
+ * - 返回带有 id 和 createdAt 的完整 ReadEvent，供上层和 UI 展示。
+ *
+ * 作用：
+ * - 保留 Agent 看过什么、为什么看、风险如何的历史。
+ * - 让后续 Memory、Skill 和调试流程可以复盘读取行为。
+ */
+export async function recordReadEvent(
+  event: Omit<ReadEvent, "id" | "createdAt"> & Partial<Pick<ReadEvent, "id" | "createdAt">>
+): Promise<ReadEvent> {
+  return mutate((store) => {
+    const readEvent: ReadEvent = {
+      ...event,
+      id: event.id || newId("rev"),
+      createdAt: event.createdAt || nowIso()
+    };
+    store.readEvents.push(readEvent);
+    store.audit.push({
+      id: newId("aud"),
+      type: readEvent.action,
+      readEventId: readEvent.id,
+      readSource: `${readEvent.source.kind}:${readEvent.source.target}`,
+      riskLevel: readEvent.riskLevel,
+      riskFlags: readEvent.riskFlags,
+      createdAt: nowIso()
+    });
+    return readEvent;
+  });
+}
+
+/**
+ * 读取最近的“眼睛”事件。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 传入 limit 可以控制读取数量，例如 listReadEvents(20)。
+ *
+ * 作用：
+ * - 给 UI、调试页、Memory 层提供“Agent 最近看过什么”的时间线。
+ * - 不返回原始文件或网页内容，只返回读取来源、原因和风险标记。
+ */
+export async function listReadEvents(limit = 100): Promise<ReadEvent[]> {
+  const store = await readStore();
+  return store.readEvents.slice(-limit).reverse();
 }

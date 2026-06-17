@@ -10,6 +10,85 @@ export type ToolStatus =
   | "failed"
   | "rejected";
 
+export type ReadRiskLevel = "L0" | "L1" | "L2" | "L3";
+
+export type ReadPermissionMode = "no_per_read_approval";
+
+export type ReadSourceKind =
+  | "local_file"
+  | "document"
+  | "workspace"
+  | "web_page"
+  | "computer_config"
+  | "app_content"
+  | "communication"
+  | "calendar_task"
+  | "memory"
+  | "mcp_resource"
+  | "search"
+  | "runtime"
+  | "app_state";
+
+export interface ReadSource {
+  kind: ReadSourceKind;
+  target: string;
+  purpose: string;
+  required: boolean;
+}
+
+export interface ReadPlan {
+  id: string;
+  goal: string;
+  reason: string;
+  sources: ReadSource[];
+  maxBytes: number;
+  maxFiles: number;
+  allowNetwork: boolean;
+  permissionMode: ReadPermissionMode;
+  expectedSignals: string[];
+  riskLevel: ReadRiskLevel;
+  createdAt: string;
+}
+
+export interface ReadResult {
+  id: string;
+  planId?: string;
+  source: ReadSource;
+  title?: string;
+  uri?: string;
+  mimeType?: string;
+  content: string;
+  summary?: string;
+  extractedSignals: string[];
+  riskLevel: ReadRiskLevel;
+  riskFlags: string[];
+  tokenEstimate: number;
+  createdAt: string;
+}
+
+export interface ContextBlock {
+  id: string;
+  sourceId: string;
+  title: string;
+  content: string;
+  relevance: number;
+  trust: "high" | "medium" | "low";
+  freshness: "fresh" | "unknown" | "stale";
+  riskFlags: string[];
+}
+
+export interface ReadEvent {
+  id: string;
+  planId?: string;
+  resultId?: string;
+  action: "read.planned" | "read.completed" | "read.failed";
+  source: ReadSource;
+  reason: string;
+  riskLevel: ReadRiskLevel;
+  riskFlags: string[];
+  createdAt: string;
+}
+
 export interface AppConfig {
   app: {
     name: string;
@@ -81,6 +160,10 @@ export interface AuditRecord {
   type: string;
   sessionId?: string;
   toolRunId?: string;
+  readEventId?: string;
+  readSource?: string;
+  riskLevel?: ReadRiskLevel;
+  riskFlags?: string[];
   tool?: string;
   status?: ToolStatus;
   approvalRequired?: boolean;
@@ -92,6 +175,7 @@ export interface Store {
   sessions: Session[];
   messages: Message[];
   toolRuns: ToolRun[];
+  readEvents: ReadEvent[];
   audit: AuditRecord[];
 }
 

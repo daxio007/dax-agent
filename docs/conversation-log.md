@@ -57,3 +57,20 @@
 - Codex 确认项目没有 Python 应用代码，随后将项目迁移为 TypeScript-first。
 - 迁移内容包括后端 `src/**/*.ts`、前端 `src/web/app.ts`、TypeScript 配置、共享类型、构建脚本和编译产物。
 - `npm run typecheck`、`npm run build`、编译产物语法检查和 API 冒烟验证均通过。
+
+## 2026-06-17
+
+- 用户提出：按照小孩模型，现在应该开始设计孩子的手脚，也就是 MCP 到底可以做什么。
+- Codex 解释 MCP 是 DAX Agent 接触世界的标准神经接口，不是大脑、记忆或 Skill。
+- 用户决定先完善“读”这个能力的设计文档。
+- Codex 新增 `docs/read-capability-design.md`，把读能力定义为 DAX Agent 的第一类感官。
+- 文档覆盖 Read Plan、ReadSource、ReadResult、ContextBlock、MCP resources 映射、只读 tools、风险分级、审批策略、记忆沉淀和未来实现顺序。
+- 用户强调：现在只讨论“读”这个地方，不要先设计别的能力；同时 DAX Agent 不只是会敲代码。
+- Codex 修正读能力文档：继续只设计读，但明确读能力不是 coding-only，workspace/project 只是 local context 的一种来源。
+- 用户进一步确认：眼睛可以读文档、网页、电脑配置、应用内容等；文件和网页默认不需要逐次被允许。
+- Codex 将读能力文档升级为“眼睛确定版”：读动作默认不逐次审批，分级用于风险标记和上下文过滤，而不是阻止读取。
+- 用户要求根据文档开始写代码，并要求逻辑清晰、每个方法都有详细 doc 解释使用方法和作用。
+- Codex 实现读能力第一阶段：新增 `src/lib/read.ts` 统一读取核心，补充 ReadPlan、ReadSource、ReadResult、ContextBlock、ReadEvent 类型，加入 read event 持久化和 HTTP API。
+- 当前已支持本地文件、文档、workspace、memory/runtime 文件、网页、电脑配置和 workspace 搜索；应用内容、通信、日历、MCP resource 和 app state 暂时等待 connector。
+- Codex 通过 `npm run typecheck`、`npm run build`、编译后核心调用和 HTTP API 调用验证读能力跑通。
+- Codex 新增 `docs/read-capability-implementation.md` 记录第一阶段实现边界和验证结果。
