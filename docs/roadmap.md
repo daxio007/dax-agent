@@ -4,13 +4,13 @@
 
 ## 当前阶段
 
-学习型 MVP，当前已经完成“读/眼睛”和“听/耳朵”的第一阶段运行时。
+学习型 MVP，当前已经完成“读/眼睛”“听/耳朵”和“嘴巴/表达”的第一阶段运行时。读和听已经推送到 `main` 分支，嘴巴运行时本轮刚实现，等待后续提交。
 
-当前最重要的目标不是继续堆功能，而是先理解并实现 Agent 收到自然语言后的行为模型。
+当前最重要的目标不是继续堆功能，而是先理解并实现 Agent 收到自然语言后的行为模型，并设计最小大脑 Agent Core。
 
 当前已支持中文/英文界面切换，默认中文。
 
-当前新增设计方向：先围绕 MCP 和 Skill 建立 DAX Agent 的按需学习模型。第一阶段先把“小孩模型”里的眼睛和耳朵设计清楚。
+当前新增设计方向：先围绕 MCP 和 Skill 建立 DAX Agent 的按需学习模型。第一阶段已经把“小孩模型”里的眼睛、耳朵和嘴巴落到第一阶段运行时，并开始设计大脑/Agent Core 与手/修改能力。
 
 项目实现语言已明确为 TypeScript-first，不使用 Python。
 
@@ -25,12 +25,19 @@
 3. 已完成读能力第一阶段运行时：ReadPlan、ReadResult、ContextBlock、ReadEvent、read API。
 4. 已完成 `docs/listen-capability-design.md`。
 5. 已完成听能力第一阶段运行时：ListenEvent、ListenResult、listen API、用户消息入口接入。
-6. 下一步：让自然语言 Agent Core 根据 ListenResult 判断何时需要读取，并自动生成/执行 ReadPlan。
-7. 再把 ContextBlock 注入 Agent Core 的工作上下文。
-8. 之后再设计 Skill 文件格式和 Skill Index。
-9. 设计 MCP Client Manager 如何接入现有 toolRuns 审批系统。
-10. 设计 Episode Store，用来记录一次完整任务经历。
-11. 设计 Skill Distiller，把成功经验整理成 draft Skill。
+6. 已完成 `docs/speak-capability-design.md`：嘴巴/表达能力设计，明确 SpeakPlan、SpeakMessage、SpeakResult、草稿边界和“表达不是执行”。
+7. 已完成嘴巴能力第一阶段运行时：SpeakPlan、SpeakMessage、SpeakResult、speak API、assistant 消息入口接入。
+8. 已完成 `docs/agent-core-design.md`：最小大脑设计，明确模型思考器、代码边界、工作记忆、记忆策略、能力路由和 Policy Gate。
+9. 已完成 `docs/hand-capability-design.md`：手/修改能力设计，明确 HandPlan、HandAction、HandPreview、HandResult、H0-H3 分级、diff preview 和审批边界。
+10. 下一步：实现 Agent Core 第一阶段类型和骨架。
+11. 再让自然语言 Agent Core 根据 ListenResult 判断何时需要读取，并自动生成/执行 ReadPlan。
+12. 再把 ContextBlock 注入 Agent Core 的工作上下文。
+13. 再让 SpeakPlan 承接 AgentDecision，把回答、追问、计划、结果汇报和草稿统一成表达层。
+14. 再实现手能力第一阶段：workspace patch preview / apply / audit。
+15. 之后再设计 Skill 文件格式和 Skill Index。
+16. 设计 MCP Client Manager 如何接入现有 toolRuns 审批系统。
+17. 设计 Episode Store，用来记录一次完整任务经历。
+18. 设计 Skill Distiller，把成功经验整理成 draft Skill。
 
 ## 未来工作
 
@@ -62,3 +69,6 @@
 - 按需学习和程序性记忆。
 - Read Capability、Context Filter 和 MCP resources。
 - Listen Capability、Intent、Constraint、Correction 和 Context Need。
+- Speak Capability、SpeakPlan、SpeakMessage、草稿、受众和表达边界。
+- Agent Core、Model Reasoner、AgentDecision、Working Memory、MemoryDecision 和 Policy Gate。
+- Hand Capability、HandPlan、HandPreview、Patch、H0-H3 修改风险和审批边界。

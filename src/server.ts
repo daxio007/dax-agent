@@ -13,6 +13,9 @@ import {
   listListenResults,
   listReadEvents,
   listSessions,
+  listSpeakMessages,
+  listSpeakPlans,
+  listSpeakResults,
   listToolRuns,
   updateToolRun
 } from "./lib/store.js";
@@ -20,7 +23,33 @@ import { processUserMessage } from "./lib/agent.js";
 import { executeToolRun } from "./lib/tools.js";
 import { coerceReadSource, createReadPlan, executeAndRecordReadPlan } from "./lib/read.js";
 import { analyzeAndRecordListenEvent } from "./lib/listen.js";
-import type { AppConfig, DeepPartial, JsonObject, ListenEventKind, ListenPrivacyLevel, ListenTrust, ReadPlan, ReadSource } from "./lib/types.js";
+import {
+  coerceSpeakAudience,
+  coerceSpeakChannel,
+  coerceSpeakContentType,
+  coerceSpeakIdentity,
+  coerceSpeakMode,
+  coerceSpeakSourceRef,
+  coerceSpeakTone,
+  createAndRecordSpeakInteraction,
+  createSpeakPlan,
+  type CreateSpeakPlanInput
+} from "./lib/speak.js";
+import type {
+  AppConfig,
+  DeepPartial,
+  JsonObject,
+  ListenEventKind,
+  ListenPrivacyLevel,
+  ListenTrust,
+  ReadPlan,
+  ReadSource,
+  SpeakMessage,
+  SpeakPlan,
+  SpeakSafetyPolicy,
+  SpeakSourcePolicy,
+  SpeakSourceRef
+} from "./lib/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "..", "public");
@@ -240,6 +269,165 @@ function optionalListenTrust(value: unknown): ListenTrust | undefined {
   return value === "high" || value === "medium" || value === "low" ? value : undefined;
 }
 
+/**
+ * 从 unknown 中读取可选布尔值。
+ *
+ * 使用方法：
+ * - speak API 处理 draft、requiresApprovalBeforeDelivery 等字段时调用。
+ *
+ * 作用：
+ * - 区分“未传入”和“传入 false”，避免默认策略被错误覆盖。
+ */
+function optionalBoolean(value: unknown): boolean | undefined {
+  return value === undefined ? undefined : Boolean(value);
+}
+
+/**
+ * 从请求 body 中读取 SpeakPlan 的输入。
+ *
+ * 使用方法：
+ * - /api/speak/plan 和 /api/speak/compose 共用它。
+ *
+ * 作用：
+ * - 将外部 JSON 收敛成 createSpeakPlan 可以消费的结构。
+ * - 保持受众、Channel、模式、语气和身份的校验都走 speak.ts。
+ */
+function speakPlanInputFromBody(body: JsonObject): CreateSpeakPlanInput {
+  return {
+    goal: optionalString(body.goal),
+    reason: optionalString(body.reason),
+    audience: body.audience === undefined ? undefined : coerceSpeakAudience(body.audience),
+    channel: body.channel === undefined ? undefined : coerceSpeakChannel(body.channel),
+    mode: body.mode === undefined ? undefined : coerceSpeakMode(body.mode),
+    contentTypes: optionalSpeakContentTypes(body.contentTypes),
+    tone: body.tone === undefined ? undefined : coerceSpeakTone(body.tone),
+    detailLevel: optionalSpeakDetailLevel(body.detailLevel),
+    language: optionalSpeakLanguage(body.language),
+    locale: optionalString(body.locale),
+    identity: body.identity === undefined ? undefined : coerceSpeakIdentity(body.identity),
+    sourcePolicy: optionalSpeakSourcePolicy(body.sourcePolicy),
+    safetyPolicy: optionalSpeakSafetyPolicy(body.safetyPolicy),
+    requiresApprovalBeforeDelivery: optionalBoolean(body.requiresApprovalBeforeDelivery)
+  };
+}
+
+/**
+ * 从 unknown 中读取 SpeakContentType 数组。
+ *
+ * 使用方法：
+ * - speakPlanInputFromBody 处理 contentTypes 时调用。
+ *
+ * 作用：
+ * - 允许调用方声明 markdown、json、draft_message 等内容形态。
+ * - 自动过滤空数组；非法类型会抛错。
+ */
+function optionalSpeakContentTypes(value: unknown): CreateSpeakPlanInput["contentTypes"] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw createHttpError("contentTypes must be an array.");
+  return value.map((item) => coerceSpeakContentType(item));
+}
+
+/**
+ * 从 unknown 中读取 SpeakPlan 详细程度。
+ *
+ * 使用方法：
+ * - speakPlanInputFromBody 处理 detailLevel 时调用。
+ *
+ * 作用：
+ * - 保证详细程度只会是 brief、normal 或 detailed。
+ */
+function optionalSpeakDetailLevel(value: unknown): SpeakPlan["detailLevel"] | undefined {
+  if (value === undefined) return undefined;
+  if (value === "brief" || value === "normal" || value === "detailed") return value;
+  throw createHttpError("detailLevel must be brief, normal, or detailed.");
+}
+
+/**
+ * 从 unknown 中读取 SpeakPlan 语言。
+ *
+ * 使用方法：
+ * - speakPlanInputFromBody 处理 language 时调用。
+ *
+ * 作用：
+ * - 保证表达语言只会是 zh-CN、en 或 mixed。
+ */
+function optionalSpeakLanguage(value: unknown): SpeakPlan["language"] | undefined {
+  if (value === undefined) return undefined;
+  if (value === "zh-CN" || value === "en" || value === "mixed") return value;
+  throw createHttpError("language must be zh-CN, en, or mixed.");
+}
+
+/**
+ * 从 unknown 中读取 SpeakMessage 格式。
+ *
+ * 使用方法：
+ * - /api/speak/compose 处理 format 时调用。
+ *
+ * 作用：
+ * - 保证输出格式只会是 text、markdown、json 或 yaml。
+ */
+function optionalSpeakFormat(value: unknown): SpeakMessage["format"] | undefined {
+  if (value === undefined) return undefined;
+  if (value === "text" || value === "markdown" || value === "json" || value === "yaml") return value;
+  throw createHttpError("format must be text, markdown, json, or yaml.");
+}
+
+/**
+ * 从 unknown 中读取 SpeakSourcePolicy。
+ *
+ * 使用方法：
+ * - speakPlanInputFromBody 处理 sourcePolicy 时调用。
+ *
+ * 作用：
+ * - 允许 API 调用方覆盖是否引用本地文件、网页来源和未验证警告。
+ */
+function optionalSpeakSourcePolicy(value: unknown): Partial<SpeakSourcePolicy> | undefined {
+  const policy = optionalJsonObject(value);
+  if (!policy) return undefined;
+  return {
+    citeLocalFiles: optionalBoolean(policy.citeLocalFiles),
+    citeWebSources: optionalBoolean(policy.citeWebSources),
+    distinguishFactsFromInferences: optionalBoolean(policy.distinguishFactsFromInferences),
+    includeUnverifiedWarning: optionalBoolean(policy.includeUnverifiedWarning)
+  };
+}
+
+/**
+ * 从 unknown 中读取 SpeakSafetyPolicy。
+ *
+ * 使用方法：
+ * - speakPlanInputFromBody 处理 safetyPolicy 时调用。
+ *
+ * 作用：
+ * - 允许 API 调用方显式调整脱敏、草稿标签和外部承诺策略。
+ */
+function optionalSpeakSafetyPolicy(value: unknown): Partial<SpeakSafetyPolicy> | undefined {
+  const policy = optionalJsonObject(value);
+  if (!policy) return undefined;
+  return {
+    redactSecrets: optionalBoolean(policy.redactSecrets),
+    redactPrivateData: optionalBoolean(policy.redactPrivateData),
+    avoidExternalCommitment: optionalBoolean(policy.avoidExternalCommitment),
+    avoidFalseExecutionClaim: optionalBoolean(policy.avoidFalseExecutionClaim),
+    requireDraftLabel: optionalBoolean(policy.requireDraftLabel)
+  };
+}
+
+/**
+ * 从 unknown 中读取 SpeakSourceRef 数组。
+ *
+ * 使用方法：
+ * - /api/speak/compose 处理 sourceRefs 时调用。
+ *
+ * 作用：
+ * - 让表达内容可以带上工具结果、记忆、上下文块或推断来源。
+ */
+function optionalSpeakSourceRefs(value: unknown): SpeakSourceRef[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw createHttpError("sourceRefs must be an array.");
+  return value.map((item) => coerceSpeakSourceRef(item));
+}
+
 async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost");
   const unsafePath = decodeURIComponent(url.pathname);
@@ -411,6 +599,55 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
   if (method === "GET" && (url.pathname === "/api/listen-results" || url.pathname === "/api/listen/results")) {
     const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
     sendJson(res, 200, await listListenResults(limit));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/speak/plan") {
+    const body = await readBody(req);
+    sendJson(res, 201, createSpeakPlan(speakPlanInputFromBody(body)));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/speak/compose") {
+    const body = await readBody(req);
+    const content = optionalString(body.content);
+    if (!content) {
+      throw createHttpError("Speak compose requires content.");
+    }
+    sendJson(
+      res,
+      201,
+      await createAndRecordSpeakInteraction({
+        ...speakPlanInputFromBody(body),
+        sessionId: optionalString(body.sessionId),
+        title: optionalString(body.title),
+        content,
+        format: optionalSpeakFormat(body.format),
+        sourceRefs: optionalSpeakSourceRefs(body.sourceRefs),
+        assumptions: optionalStringArray(body.assumptions),
+        uncertaintyFlags: optionalStringArray(body.uncertaintyFlags),
+        riskFlags: optionalStringArray(body.riskFlags),
+        draft: optionalBoolean(body.draft)
+      })
+    );
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/speak-plans" || url.pathname === "/api/speak/plans")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listSpeakPlans(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/speak-messages" || url.pathname === "/api/speak/messages")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listSpeakMessages(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/speak-results" || url.pathname === "/api/speak/results")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listSpeakResults(limit));
     return;
   }
 

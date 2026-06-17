@@ -8,7 +8,26 @@ import {
 import { completeChat } from "./providers.js";
 import { executeTool, executeToolRun, getTool, toolManifest } from "./tools.js";
 import { analyzeAndRecordUserText } from "./listen.js";
-import type { AppConfig, ChatMessage, JsonObject, ListenEvent, ListenResult, Locale, Message, ToolRun } from "./types.js";
+import { createAndRecordSpeakInteraction, speakModeFromListenResult } from "./speak.js";
+import type {
+  AppConfig,
+  ChatMessage,
+  JsonObject,
+  ListenEvent,
+  ListenResult,
+  Locale,
+  Message,
+  SpeakAudience,
+  SpeakChannel,
+  SpeakContentType,
+  SpeakIdentity,
+  SpeakMessage,
+  SpeakMode,
+  SpeakPlan,
+  SpeakResult,
+  SpeakSourceRef,
+  ToolRun
+} from "./types.js";
 
 type SlashCommand =
   | { kind: "help" }
@@ -26,6 +45,33 @@ interface ProcessUserMessageResult {
   toolRuns: (ToolRun | null)[];
   listenEvent: ListenEvent;
   listenResult: ListenResult;
+  speakPlan: SpeakPlan;
+  speakMessage: SpeakMessage;
+  speakResult: SpeakResult;
+}
+
+interface AssistantMessageWithSpeak {
+  message: Message;
+  speakPlan: SpeakPlan;
+  speakMessage: SpeakMessage;
+  speakResult: SpeakResult;
+}
+
+interface AddSpokenAssistantMessageOptions {
+  mode?: SpeakMode;
+  audience?: SpeakAudience;
+  channel?: SpeakChannel;
+  identity?: SpeakIdentity;
+  contentTypes?: SpeakContentType[];
+  sourceRefs?: SpeakSourceRef[];
+  assumptions?: string[];
+  uncertaintyFlags?: string[];
+  riskFlags?: string[];
+  draft?: boolean;
+  title?: string;
+  goal?: string;
+  reason?: string;
+  meta?: JsonObject;
 }
 
 function isZh(locale: Locale): boolean {
@@ -63,6 +109,62 @@ function extractToolRequests(content: string): Array<{ tool: string; input?: Jso
 
 function cleanAssistantContent(content: string): string {
   return content.replace(/```tool_request\s*[\s\S]*?```/gi, "").trim();
+}
+
+/**
+ * 通过“嘴巴”能力创建 assistant 消息并写入会话。
+ *
+ * 使用方法：
+ * - 所有 assistant 可见输出都应调用这个方法，而不是直接 addMessage。
+ * - content 是准备表达的原始文本，options 描述表达模式、来源、草稿和额外 meta。
+ * - 返回值包含 session message 以及对应 SpeakPlan、SpeakMessage、SpeakResult。
+ *
+ * 作用：
+ * - 把普通回复、工具结果、状态说明和模型错误统一纳入 Speak Capability。
+ * - 让每条 assistant 输出都有受众、Channel、风险标记和审计记录。
+ */
+async function addSpokenAssistantMessage(
+  sessionId: string,
+  content: string,
+  locale: Locale,
+  options: AddSpokenAssistantMessageOptions = {}
+): Promise<AssistantMessageWithSpeak> {
+  const speak = await createAndRecordSpeakInteraction({
+    sessionId,
+    content,
+    locale: String(locale),
+    mode: options.mode || "answer",
+    audience: options.audience || "user",
+    channel: options.channel || "local_chat",
+    identity: options.identity,
+    contentTypes: options.contentTypes,
+    sourceRefs: options.sourceRefs,
+    assumptions: options.assumptions,
+    uncertaintyFlags: options.uncertaintyFlags,
+    riskFlags: options.riskFlags,
+    draft: options.draft,
+    title: options.title,
+    goal: options.goal,
+    reason: options.reason
+  });
+  const meta: JsonObject = {
+    ...(options.meta || {}),
+    speakPlanId: speak.plan.id,
+    speakMessageId: speak.message.id,
+    speakResultId: speak.result.id,
+    speakMode: speak.plan.mode,
+    speakAudience: speak.plan.audience,
+    speakChannel: speak.plan.channel,
+    speakDraft: speak.message.draft,
+    speakRiskFlags: speak.message.riskFlags
+  };
+  const message = await addMessage(sessionId, "assistant", speak.message.content, meta);
+  return {
+    message,
+    speakPlan: speak.plan,
+    speakMessage: speak.message,
+    speakResult: speak.result
+  };
 }
 
 function parseSlashCommand(content: string): SlashCommand | null {
@@ -144,10 +246,16 @@ async function handleSlash(
   userMessage: Message,
   slash: SlashCommand,
   locale: Locale
-): Promise<{ message: Message; toolRuns: (ToolRun | null)[] }> {
+): Promise<AssistantMessageWithSpeak & { toolRuns: (ToolRun | null)[] }> {
   if (slash.kind === "help") {
+    const spoken = await addSpokenAssistantMessage(sessionId, helpText(locale), locale, {
+      mode: "explain",
+      contentTypes: ["markdown"],
+      sourceRefs: [{ kind: "system_status", label: "local help command" }],
+      meta: { source: "local-command" }
+    });
     return {
-      message: await addMessage(sessionId, "assistant", helpText(locale), { source: "local-command" }),
+      ...spoken,
       toolRuns: []
     };
   }
@@ -156,10 +264,15 @@ async function handleSlash(
     const content = isZh(locale)
       ? `未知命令：${slash.command}。可以试试 /help。`
       : `Unknown command: ${slash.command}. Try /help.`;
-    return {
-      message: await addMessage(sessionId, "assistant", content, {
+    const spoken = await addSpokenAssistantMessage(sessionId, content, locale, {
+      mode: "warn",
+      sourceRefs: [{ kind: "user_message", id: userMessage.id, label: "unknown slash command" }],
+      meta: {
         source: "local-command"
-      }),
+      }
+    });
+    return {
+      ...spoken,
       toolRuns: []
     };
   }
@@ -172,13 +285,12 @@ async function handleSlash(
       const content = isZh(locale)
         ? `已创建一个待审批的 ${slash.tool} 请求。请在工具面板中查看并批准。`
         : `Created a pending ${slash.tool} request. Review and approve it in the tool panel.`;
-      const message = await addMessage(
-        sessionId,
-        "assistant",
-        content,
-        { source: "local-command", toolRunId: run.id }
-      );
-      return { message, toolRuns: [run] };
+      const spoken = await addSpokenAssistantMessage(sessionId, content, locale, {
+        mode: "status",
+        sourceRefs: [{ kind: "system_status", id: run.id, label: `${slash.tool} pending approval` }],
+        meta: { source: "local-command", toolRunId: run.id }
+      });
+      return { ...spoken, toolRuns: [run] };
     }
 
     const output = await executeTool(slash.tool, slash.input);
@@ -192,11 +304,16 @@ async function handleSlash(
       "tool.completed"
     );
     const prefix = isZh(locale) ? `${slash.tool} 的工具结果：` : `Tool result from ${slash.tool}:`;
-    const message = await addMessage(sessionId, "assistant", `${prefix}\n\n${output}`, {
-      source: "local-command",
-      toolRunId: completed?.id || run.id
+    const spoken = await addSpokenAssistantMessage(sessionId, `${prefix}\n\n${output}`, locale, {
+      mode: "report",
+      contentTypes: ["markdown"],
+      sourceRefs: [{ kind: "tool_result", id: completed?.id || run.id, label: slash.tool }],
+      meta: {
+        source: "local-command",
+        toolRunId: completed?.id || run.id
+      }
     });
-    return { message, toolRuns: [completed] };
+    return { ...spoken, toolRuns: [completed] };
   }
 
   throw new Error("Unsupported slash command.");
@@ -261,7 +378,10 @@ export async function processUserMessage(
       assistantMessage: slashResult.message,
       toolRuns: slashResult.toolRuns,
       listenEvent: listenAnalysis.event,
-      listenResult: listenAnalysis.result
+      listenResult: listenAnalysis.result,
+      speakPlan: slashResult.speakPlan,
+      speakMessage: slashResult.speakMessage,
+      speakResult: slashResult.speakResult
     };
   }
 
@@ -281,38 +401,58 @@ export async function processUserMessage(
       ? "我请求了一次工具运行，请在工具面板中查看。"
       : "I requested a tool run. Review the tool panel.";
     const displayContent = cleanAssistantContent(rawContent) || fallbackContent;
-    const assistantMessage = await addMessage(sessionId, "assistant", displayContent, {
-      provider: completion.provider,
-      model: completion.model,
-      rawContent
+    const spoken = await addSpokenAssistantMessage(sessionId, displayContent, locale, {
+      mode: speakModeFromListenResult(listenAnalysis.result),
+      contentTypes: ["markdown"],
+      sourceRefs: [
+        { kind: "listen_result", id: listenAnalysis.result.id, label: listenAnalysis.result.primaryIntent },
+        { kind: "user_message", id: userMessage.id, label: "current user message" }
+      ],
+      meta: {
+        provider: completion.provider,
+        model: completion.model,
+        rawContent
+      }
     });
     const toolRuns = await createRunsFromAssistant(
       sessionId,
-      { ...assistantMessage, content: rawContent },
+      { ...spoken.message, content: rawContent },
       config
     );
     return {
       userMessage,
-      assistantMessage,
+      assistantMessage: spoken.message,
       toolRuns,
       listenEvent: listenAnalysis.event,
-      listenResult: listenAnalysis.result
+      listenResult: listenAnalysis.result,
+      speakPlan: spoken.speakPlan,
+      speakMessage: spoken.speakMessage,
+      speakResult: spoken.speakResult
     };
   } catch (error) {
-    const assistantMessage = await addMessage(
+    const content = isZh(locale)
+      ? `模型错误：${error instanceof Error ? error.message : String(error)}\n\n你可以在设置中调整 Provider，或使用 /help 查看本地命令。`
+      : `Model error: ${error instanceof Error ? error.message : String(error)}\n\nUse Settings to adjust the provider, or use /help for local commands.`;
+    const spoken = await addSpokenAssistantMessage(
       sessionId,
-      "assistant",
-      isZh(locale)
-        ? `模型错误：${error instanceof Error ? error.message : String(error)}\n\n你可以在设置中调整 Provider，或使用 /help 查看本地命令。`
-        : `Model error: ${error instanceof Error ? error.message : String(error)}\n\nUse Settings to adjust the provider, or use /help for local commands.`,
-      { error: true }
+      content,
+      locale,
+      {
+        mode: "warn",
+        sourceRefs: [{ kind: "system_status", label: "model provider error" }],
+        riskFlags: ["contains_unverified_claim"],
+        meta: { error: true }
+      }
     );
     return {
       userMessage,
-      assistantMessage,
+      assistantMessage: spoken.message,
       toolRuns: [],
       listenEvent: listenAnalysis.event,
-      listenResult: listenAnalysis.result
+      listenResult: listenAnalysis.result,
+      speakPlan: spoken.speakPlan,
+      speakMessage: spoken.speakMessage,
+      speakResult: spoken.speakResult
     };
   }
 }

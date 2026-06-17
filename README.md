@@ -81,7 +81,14 @@ This is intentionally a small, inspectable foundation. More channels, richer ski
 - `docs/project-memory.md`
 - `docs/design-notes.md`
 - `docs/agent-learning-model.md`
+- `docs/agent-core-design.md`
 - `docs/read-capability-design.md`
+- `docs/listen-capability-design.md`
+- `docs/speak-capability-design.md`
+- `docs/hand-capability-design.md`
+- `docs/read-capability-implementation.md`
+- `docs/listen-capability-implementation.md`
+- `docs/speak-capability-implementation.md`
 - `docs/decision-log.md`
 - `docs/roadmap.md`
 - `docs/conversation-log.md`

@@ -83,3 +83,21 @@
 - Codex 将用户消息入口接入听能力：消息进入 slash command 或模型流程前，会先记录 `ListenEvent` 和 `ListenResult`。
 - Codex 通过 `npm run typecheck`、`npm run build`、编译后核心调用、HTTP API 调用和真实消息 API 调用验证听能力跑通。
 - Codex 新增 `docs/listen-capability-implementation.md` 记录第一阶段实现边界和验证结果。
+- 用户补充确认：读能力和听能力都已经完成，代码已经推送到 `main` 分支。后续应以此作为新的项目基线。
+- 用户提出开始思考“嘴巴”能力，并判断嘴巴可以输出什么不应该被硬限制。
+- Codex 和用户共同明确：嘴巴是表达层，真正需要控制的是受众、身份、外部影响和隐私边界；嘴巴可以生成回答、解释、追问、计划、汇报和草稿，但草稿不是发送，计划不是执行。
+- Codex 新增 `docs/speak-capability-design.md`，把嘴巴能力定义为 DAX Agent 的第三类表达器，覆盖 SpeakPlan、SpeakMessage、SpeakResult、表达分级、风险标记、来源引用、草稿边界和未来实现顺序。
+- 用户要求根据嘴巴设计文档开始写代码，要求完全实现，并要求方法有详细 doc 解释使用方法和作用。
+- Codex 实现嘴巴能力第一阶段：新增 `src/lib/speak.ts` 统一表达核心，补充 SpeakPlan、SpeakMessage、SpeakResult 等类型，加入 speak plan/message/result 持久化、审计记录和 HTTP API。
+- Codex 将 assistant 可见输出接入嘴巴能力：`/help`、未知命令、待审批工具提示、工具结果、模型回复和模型错误都会先生成 `SpeakPlan`、`SpeakMessage` 和 `SpeakResult`。
+- Codex 通过 TypeScript typecheck、build、编译后核心调用、HTTP API 调用和真实消息 API 调用验证嘴巴能力跑通。
+- Codex 新增 `docs/speak-capability-implementation.md` 记录第一阶段实现边界和验证结果。
+- 用户和 Codex 讨论下一步是否应该设计“大脑”还是先设计四肢。Codex 建议先设计最小大脑，因为四肢会改变世界，应该先有统一判断、记忆策略和安全边界。
+- 用户提出大脑是否应更多使用模型而不是硬编码规则，并担心大脑要控制五官四肢，Agent 是否能承受压力。
+- Codex 建议采用混合大脑：模型负责思考、方案生成和记忆候选，代码负责骨架、调度、权限、schema 校验、Policy Gate 和审计；低等级模型可承担第一版日常思考，高级模型只是未来可选升级。
+- 用户要求先设计大脑初版文档。
+- Codex 新增 `docs/agent-core-design.md`，定义最小大脑 Agent Core，覆盖 Model Reasoner、Working Memory、AgentDecision、MemoryDecision、SkillDecision、ActionProposal、Policy Gate、能力路由、模型使用策略和未来实现顺序。
+- 用户提出开始思考“手”能力。
+- Codex 建议把手定义为第一类行动器，先收窄到 workspace 写入和 patch，并强调手会改变世界，所以需要 diff preview、风险分级、审批和审计。
+- 用户同意设计手能力，并要求本轮修改后把前面嘴巴运行时和大脑设计一起提交。
+- Codex 新增 `docs/hand-capability-design.md`，覆盖手和嘴巴/脚/眼睛/大脑/MCP 的边界、H0-H3 分级、HandPlan、HandAction、HandPreview、HandResult、diff preview、审批策略、记忆沉淀和未来实现顺序。

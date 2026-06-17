@@ -12,6 +12,9 @@ import type {
   Session,
   SessionDetail,
   SessionSummary,
+  SpeakMessage,
+  SpeakPlan,
+  SpeakResult,
   Store,
   ToolRun
 } from "./types.js";
@@ -29,6 +32,9 @@ function emptyStore(): Store {
     readEvents: [],
     listenEvents: [],
     listenResults: [],
+    speakPlans: [],
+    speakMessages: [],
+    speakResults: [],
     audit: []
   };
 }
@@ -351,4 +357,97 @@ export async function listListenEvents(limit = 100): Promise<ListenEvent[]> {
 export async function listListenResults(limit = 100): Promise<ListenResult[]> {
   const store = await readStore();
   return store.listenResults.slice(-limit).reverse();
+}
+
+/**
+ * 记录一次“嘴巴”表达计划、表达消息和表达结果。
+ *
+ * 使用方法：
+ * - speak.ts 创建 SpeakPlan、SpeakMessage、SpeakResult 后调用。
+ * - sessionId 可选；如果这次表达来自某个会话，应传入 sessionId 方便审计关联。
+ * - 返回写入后的 plan/message/result，其中 result.auditId 会指向本次审计记录。
+ *
+ * 作用：
+ * - 保留 Agent 对谁说、怎么说、是否草稿、风险标记是什么。
+ * - 让未来 UI、Memory 和调试流程可以复盘表达链路。
+ */
+export async function recordSpeakInteraction(
+  plan: SpeakPlan,
+  message: SpeakMessage,
+  result: SpeakResult,
+  sessionId?: string
+): Promise<{ plan: SpeakPlan; message: SpeakMessage; result: SpeakResult }> {
+  return mutate((store) => {
+    const auditId = newId("aud");
+    const storedResult: SpeakResult = {
+      ...result,
+      auditId: result.auditId || auditId
+    };
+    store.speakPlans.push(plan);
+    store.speakMessages.push(message);
+    store.speakResults.push(storedResult);
+    store.audit.push({
+      id: auditId,
+      type: storedResult.blockedReason ? "speak.blocked" : "speak.delivered",
+      sessionId,
+      speakPlanId: plan.id,
+      speakMessageId: message.id,
+      speakResultId: storedResult.id,
+      speakMode: plan.mode,
+      speakAudience: plan.audience,
+      speakChannel: plan.channel,
+      speakDraft: message.draft,
+      riskFlags: message.riskFlags,
+      createdAt: nowIso()
+    });
+    return { plan, message, result: storedResult };
+  });
+}
+
+/**
+ * 读取最近的“嘴巴”表达计划。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 传入 limit 可以控制数量，例如 listSpeakPlans(20)。
+ *
+ * 作用：
+ * - 给调试页和审计页展示 Agent 最近为什么准备表达。
+ * - 帮助检查受众、Channel、模式和审批边界是否正确。
+ */
+export async function listSpeakPlans(limit = 100): Promise<SpeakPlan[]> {
+  const store = await readStore();
+  return store.speakPlans.slice(-limit).reverse();
+}
+
+/**
+ * 读取最近的“嘴巴”表达消息。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 传入 limit 可以查看更短或更长的表达历史。
+ *
+ * 作用：
+ * - 展示 Agent 实际准备展示或作为草稿输出的内容。
+ * - 方便检查草稿标签、来源引用、不确定性和风险标记。
+ */
+export async function listSpeakMessages(limit = 100): Promise<SpeakMessage[]> {
+  const store = await readStore();
+  return store.speakMessages.slice(-limit).reverse();
+}
+
+/**
+ * 读取最近的“嘴巴”表达结果。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 传入 limit 可以控制返回数量。
+ *
+ * 作用：
+ * - 展示表达是否已交给本地 Channel、是否被阻止，以及是否只是外部投递候选。
+ * - 明确嘴巴的 externalDelivery 永远不是外部发送完成记录。
+ */
+export async function listSpeakResults(limit = 100): Promise<SpeakResult[]> {
+  const store = await readStore();
+  return store.speakResults.slice(-limit).reverse();
 }

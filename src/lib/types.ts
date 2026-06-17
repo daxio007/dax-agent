@@ -237,6 +237,141 @@ export interface ListenResult {
   createdAt: string;
 }
 
+export type SpeakAudience =
+  | "user"
+  | "developer"
+  | "future_self"
+  | "external_person"
+  | "external_group"
+  | "public"
+  | "machine";
+
+export type SpeakChannel =
+  | "local_chat"
+  | "web_ui"
+  | "terminal"
+  | "document_draft"
+  | "email_draft"
+  | "im_draft"
+  | "external_channel_draft"
+  | "voice_draft"
+  | "machine_output";
+
+export type SpeakMode =
+  | "answer"
+  | "explain"
+  | "ask"
+  | "status"
+  | "plan"
+  | "report"
+  | "warn"
+  | "draft"
+  | "summarize"
+  | "structured"
+  | "acknowledge"
+  | "decline";
+
+export type SpeakContentType =
+  | "plain_text"
+  | "markdown"
+  | "code"
+  | "json"
+  | "yaml"
+  | "table"
+  | "checklist"
+  | "diff_summary"
+  | "citation_summary"
+  | "question"
+  | "draft_message";
+
+export type SpeakTone = "calm" | "friendly" | "direct" | "technical" | "teaching" | "formal" | "concise";
+
+export type SpeakIdentity =
+  | "assistant"
+  | "user_draft"
+  | "system_status"
+  | "tool_report"
+  | "external_message_draft";
+
+export type SpeakSourceRefKind =
+  | "context_block"
+  | "read_result"
+  | "tool_result"
+  | "memory"
+  | "user_message"
+  | "listen_result"
+  | "inference"
+  | "system_status";
+
+export interface SpeakSourcePolicy {
+  citeLocalFiles: boolean;
+  citeWebSources: boolean;
+  distinguishFactsFromInferences: boolean;
+  includeUnverifiedWarning: boolean;
+}
+
+export interface SpeakSafetyPolicy {
+  redactSecrets: boolean;
+  redactPrivateData: boolean;
+  avoidExternalCommitment: boolean;
+  avoidFalseExecutionClaim: boolean;
+  requireDraftLabel: boolean;
+}
+
+export interface SpeakSourceRef {
+  kind: SpeakSourceRefKind;
+  id?: string;
+  label: string;
+  uri?: string;
+}
+
+export interface SpeakPlan {
+  id: string;
+  goal: string;
+  reason: string;
+  audience: SpeakAudience;
+  channel: SpeakChannel;
+  mode: SpeakMode;
+  contentTypes: SpeakContentType[];
+  tone: SpeakTone;
+  detailLevel: "brief" | "normal" | "detailed";
+  language: "zh-CN" | "en" | "mixed";
+  identity: SpeakIdentity;
+  sourcePolicy: SpeakSourcePolicy;
+  safetyPolicy: SpeakSafetyPolicy;
+  requiresApprovalBeforeDelivery: boolean;
+  createdAt: string;
+}
+
+export interface SpeakMessage {
+  id: string;
+  planId: string;
+  audience: SpeakAudience;
+  channel: SpeakChannel;
+  mode: SpeakMode;
+  title?: string;
+  content: string;
+  format: "text" | "markdown" | "json" | "yaml";
+  sourceRefs: SpeakSourceRef[];
+  assumptions: string[];
+  uncertaintyFlags: string[];
+  riskFlags: string[];
+  draft: boolean;
+  createdAt: string;
+}
+
+export interface SpeakResult {
+  id: string;
+  planId: string;
+  messageId: string;
+  delivered: boolean;
+  deliveryTarget: SpeakChannel;
+  externalDelivery: false;
+  auditId?: string;
+  blockedReason?: string;
+  createdAt: string;
+}
+
 export interface AppConfig {
   app: {
     name: string;
@@ -311,6 +446,13 @@ export interface AuditRecord {
   readEventId?: string;
   listenEventId?: string;
   listenResultId?: string;
+  speakPlanId?: string;
+  speakMessageId?: string;
+  speakResultId?: string;
+  speakMode?: SpeakMode;
+  speakAudience?: SpeakAudience;
+  speakChannel?: SpeakChannel;
+  speakDraft?: boolean;
   listenIntent?: ListenIntent;
   readSource?: string;
   riskLevel?: ReadRiskLevel;
@@ -329,6 +471,9 @@ export interface Store {
   readEvents: ReadEvent[];
   listenEvents: ListenEvent[];
   listenResults: ListenResult[];
+  speakPlans: SpeakPlan[];
+  speakMessages: SpeakMessage[];
+  speakResults: SpeakResult[];
   audit: AuditRecord[];
 }
 
