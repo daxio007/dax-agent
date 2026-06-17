@@ -9,6 +9,9 @@ import {
   deleteSession,
   getSession,
   listAudit,
+  listFootPlans,
+  listFootPreviews,
+  listFootResults,
   listListenEvents,
   listListenResults,
   listReadEvents,
@@ -21,6 +24,14 @@ import {
 } from "./lib/store.js";
 import { processUserMessage } from "./lib/agent.js";
 import { executeToolRun } from "./lib/tools.js";
+import {
+  coerceFootAction,
+  coerceFootPlan,
+  createFootPlan,
+  createFootPreview,
+  executeAndRecordFootPlan,
+  type CreateFootPlanInput
+} from "./lib/foot.js";
 import { coerceReadSource, createReadPlan, executeAndRecordReadPlan } from "./lib/read.js";
 import { analyzeAndRecordListenEvent } from "./lib/listen.js";
 import {
@@ -38,6 +49,7 @@ import {
 import type {
   AppConfig,
   DeepPartial,
+  FootPlan,
   JsonObject,
   ListenEventKind,
   ListenPrivacyLevel,
@@ -280,6 +292,75 @@ function optionalListenTrust(value: unknown): ListenTrust | undefined {
  */
 function optionalBoolean(value: unknown): boolean | undefined {
   return value === undefined ? undefined : Boolean(value);
+}
+
+/**
+ * 从请求 body 中读取脚部动作列表。
+ *
+ * 使用方法：
+ * - /api/foot/plan、/api/foot/preview 和 /api/foot/execute 都通过它读取 actions。
+ *
+ * 作用：
+ * - 统一要求 actions 必须是非空数组。
+ * - 复用 foot.ts 的 coerceFootAction，确保 API 和核心模块使用同一套动作结构。
+ */
+function footActionsFromBody(body: JsonObject): ReturnType<typeof coerceFootAction>[] {
+  if (!Array.isArray(body.actions) || body.actions.length === 0) {
+    throw createHttpError("Foot request requires a non-empty actions array.");
+  }
+  return body.actions.map((action) => coerceFootAction(action));
+}
+
+/**
+ * 从请求 body 中读取脚部计划输入。
+ *
+ * 使用方法：
+ * - /api/foot/plan 创建新 FootPlan 时调用。
+ * - /api/foot/preview 和 /api/foot/execute 在没有传入 plan 对象时也调用。
+ *
+ * 作用：
+ * - 把外部 JSON 收敛成 createFootPlan 可以消费的结构。
+ * - API 层只负责轻量字段转换，风险推断仍由 foot.ts 完成。
+ */
+function footPlanInputFromBody(body: JsonObject): CreateFootPlanInput {
+  return {
+    goal: optionalString(body.goal),
+    reason: optionalString(body.reason),
+    actions: footActionsFromBody(body),
+    expectedOutcome: optionalString(body.expectedOutcome)
+  };
+}
+
+/**
+ * 从请求 body 中得到 FootPlan。
+ *
+ * 使用方法：
+ * - 调用方可以传完整 plan，也可以传 goal/reason/actions。
+ * - 传完整 plan 时使用 coerceFootPlan 保留 id，便于先 plan 后 execute。
+ *
+ * 作用：
+ * - 让 foot API 支持三段式调用，也支持一次 execute 的简化调用。
+ */
+function footPlanFromBody(body: JsonObject): FootPlan {
+  const plan = optionalJsonObject(body.plan);
+  return plan ? coerceFootPlan(plan) : createFootPlan(footPlanInputFromBody(body));
+}
+
+/**
+ * 从请求 body 中读取脚部执行选项。
+ *
+ * 使用方法：
+ * - /api/foot/execute 读取 approved 和 dryRun 时调用。
+ *
+ * 作用：
+ * - 明确 approved=true 表示调用方已经完成审批。
+ * - dryRun=true 会生成 skipped result，不启动真实进程。
+ */
+function footExecutionOptionsFromBody(body: JsonObject): { approved?: boolean; dryRun?: boolean } {
+  return {
+    approved: optionalBoolean(body.approved),
+    dryRun: optionalBoolean(body.dryRun)
+  };
 }
 
 /**
@@ -648,6 +729,44 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
   if (method === "GET" && (url.pathname === "/api/speak-results" || url.pathname === "/api/speak/results")) {
     const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
     sendJson(res, 200, await listSpeakResults(limit));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/foot/plan") {
+    const body = await readBody(req);
+    sendJson(res, 201, createFootPlan(footPlanInputFromBody(body)));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/foot/preview") {
+    const body = await readBody(req);
+    const config = await loadConfig();
+    sendJson(res, 201, await createFootPreview(footPlanFromBody(body), config));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/foot/execute") {
+    const body = await readBody(req);
+    const config = await loadConfig();
+    sendJson(res, 200, await executeAndRecordFootPlan(footPlanFromBody(body), footExecutionOptionsFromBody(body), config));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/foot-plans" || url.pathname === "/api/foot/plans")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listFootPlans(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/foot-previews" || url.pathname === "/api/foot/previews")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listFootPreviews(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/foot-results" || url.pathname === "/api/foot/results")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listFootResults(limit));
     return;
   }
 

@@ -3,6 +3,9 @@ import path from "node:path";
 import { newId, nowIso } from "./ids.js";
 import type {
   AuditRecord,
+  FootPlan,
+  FootPreview,
+  FootResult,
   JsonObject,
   ListenEvent,
   ListenResult,
@@ -35,6 +38,9 @@ function emptyStore(): Store {
     speakPlans: [],
     speakMessages: [],
     speakResults: [],
+    footPlans: [],
+    footPreviews: [],
+    footResults: [],
     audit: []
   };
 }
@@ -450,4 +456,154 @@ export async function listSpeakMessages(limit = 100): Promise<SpeakMessage[]> {
 export async function listSpeakResults(limit = 100): Promise<SpeakResult[]> {
   const store = await readStore();
   return store.speakResults.slice(-limit).reverse();
+}
+
+/**
+ * 记录一次“脚”执行计划，并写入审计日志。
+ *
+ * 使用方法：
+ * - foot.ts 创建 FootPlan 后调用 recordFootPlan(plan)。
+ * - 如果同一个 plan id 已经存在，会用新内容覆盖旧内容，避免 API plan -> preview -> execute 流程重复记录。
+ *
+ * 作用：
+ * - 保留 Agent 准备运行什么命令、为什么运行、风险等级和审批要求。
+ * - 明确计划本身不是执行结果，只有后续 FootResult 才能证明命令真的运行过。
+ */
+export async function recordFootPlan(plan: FootPlan): Promise<FootPlan> {
+  return mutate((store) => {
+    const index = store.footPlans.findIndex((item) => item.id === plan.id);
+    if (index >= 0) {
+      store.footPlans[index] = plan;
+    } else {
+      store.footPlans.push(plan);
+    }
+    store.audit.push({
+      id: newId("aud"),
+      type: "foot.planned",
+      footPlanId: plan.id,
+      footRiskLevel: plan.riskLevel,
+      riskFlags: plan.requiresApproval ? ["requires_user_confirmation"] : [],
+      approvalRequired: plan.requiresApproval,
+      createdAt: nowIso()
+    });
+    return plan;
+  });
+}
+
+/**
+ * 记录一次“脚”执行预览，并写入审计日志。
+ *
+ * 使用方法：
+ * - foot.ts 生成 FootPreview 后调用 recordFootPreview(preview)。
+ * - 如果同一个 preview id 已存在，会覆盖旧内容，便于 API 重放同一预览。
+ *
+ * 作用：
+ * - 保存命令、cwd、timeout、风险标记和是否需要审批。
+ * - 让用户和未来大脑可以复盘“执行前系统看到了什么风险”。
+ */
+export async function recordFootPreview(preview: FootPreview): Promise<FootPreview> {
+  return mutate((store) => {
+    const index = store.footPreviews.findIndex((item) => item.id === preview.id);
+    if (index >= 0) {
+      store.footPreviews[index] = preview;
+    } else {
+      store.footPreviews.push(preview);
+    }
+    store.audit.push({
+      id: newId("aud"),
+      type: "foot.previewed",
+      footPlanId: preview.planId,
+      footPreviewId: preview.id,
+      footRiskLevel: preview.riskLevel,
+      riskFlags: preview.riskFlags,
+      approvalRequired: preview.requiresApproval,
+      createdAt: nowIso()
+    });
+    return preview;
+  });
+}
+
+/**
+ * 记录一次“脚”执行结果，并写入审计日志。
+ *
+ * 使用方法：
+ * - 命令完成、失败、超时、被拒绝或 dry run 跳过后调用 recordFootResult(result)。
+ * - 返回值会补上 auditId，供嘴巴或 UI 引用。
+ *
+ * 作用：
+ * - 保存真实执行结果，包括状态、输出、错误、耗时和命令结果。
+ * - 只有 status 为 completed 的 FootResult 才表示脚真的成功走完一次执行。
+ */
+export async function recordFootResult(result: FootResult): Promise<FootResult> {
+  return mutate((store) => {
+    const auditId = result.auditId || newId("aud");
+    const storedResult: FootResult = {
+      ...result,
+      auditId
+    };
+    const index = store.footResults.findIndex((item) => item.id === storedResult.id);
+    if (index >= 0) {
+      store.footResults[index] = storedResult;
+    } else {
+      store.footResults.push(storedResult);
+    }
+    store.audit.push({
+      id: auditId,
+      type: `foot.${storedResult.status}`,
+      footPlanId: storedResult.planId,
+      footPreviewId: storedResult.previewId,
+      footResultId: storedResult.id,
+      status: storedResult.status === "completed" ? "completed" : "failed",
+      createdAt: nowIso()
+    });
+    return storedResult;
+  });
+}
+
+/**
+ * 读取最近的“脚”执行计划。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 调试页、审计页或 API 可以传入 limit 缩小返回数量。
+ *
+ * 作用：
+ * - 展示 Agent 最近准备运行的命令计划。
+ * - 帮助检查风险等级和审批要求是否合理。
+ */
+export async function listFootPlans(limit = 100): Promise<FootPlan[]> {
+  const store = await readStore();
+  return store.footPlans.slice(-limit).reverse();
+}
+
+/**
+ * 读取最近的“脚”执行预览。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 用于 UI 或调试流程查看命令执行前的风险说明。
+ *
+ * 作用：
+ * - 展示命令、cwd、timeout、风险标记和是否需要审批。
+ * - 帮助确认脚没有绕过 preview 直接运行。
+ */
+export async function listFootPreviews(limit = 100): Promise<FootPreview[]> {
+  const store = await readStore();
+  return store.footPreviews.slice(-limit).reverse();
+}
+
+/**
+ * 读取最近的“脚”执行结果。
+ *
+ * 使用方法：
+ * - 默认返回最近 100 条。
+ * - 嘴巴、UI 或审计页可以用它查看命令是否成功、失败、超时或被拒绝。
+ *
+ * 作用：
+ * - 展示真实执行历史。
+ * - 为未来 Agent Core 的反思和下一步判断提供过程结果。
+ */
+export async function listFootResults(limit = 100): Promise<FootResult[]> {
+  const store = await readStore();
+  return store.footResults.slice(-limit).reverse();
 }

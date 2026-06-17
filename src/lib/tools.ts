@@ -1,7 +1,7 @@
-import { exec } from "node:child_process";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig, resolveWorkspace } from "./config.js";
+import { executeAndRecordFootPlan, formatFootResultOutput } from "./foot.js";
 import { updateToolRun } from "./store.js";
 import type { AppConfig, JsonObject, ToolDefinition, ToolRun } from "./types.js";
 
@@ -127,35 +127,33 @@ async function searchWorkspace(input: JsonObject, config: AppConfig): Promise<st
 }
 
 async function runShell(input: JsonObject, config: AppConfig): Promise<string> {
-  if (!config.security?.allowShell) {
-    throw new Error("Shell execution is disabled in config.");
-  }
   const command = stringInput(input, "command");
   if (!command) throw new Error("shell.run requires input.command.");
-  const workspace = resolveWorkspace(config);
-  const cwd = ensureInsideWorkspace(stringInput(input, "cwd") || ".", workspace);
-  const timeout = Number(config.security?.commandTimeoutMs || 30000);
-
-  return new Promise((resolve, reject) => {
-    exec(
-      command,
-      {
-        cwd,
-        timeout,
-        windowsHide: true,
-        maxBuffer: 1024 * 1024
-      },
-      (error, stdout, stderr) => {
-        const combined = [stdout, stderr].filter(Boolean).join("\n").trim();
-        if (error) {
-          const message = combined || error.message;
-          reject(new Error(message));
-          return;
+  const execution = await executeAndRecordFootPlan(
+    {
+      goal: "Run an approved shell command.",
+      reason: "A shell.run tool request was approved by the user.",
+      actions: [
+        {
+          kind: "run_command",
+          targetKind: "workspace",
+          command,
+          cwd: stringInput(input, "cwd") || ".",
+          reason: "Execute the approved shell.run command.",
+          expectedEffect: "Produce command output for the tool run.",
+          inputSummary: command
         }
-        resolve(combined || "(command completed with no output)");
-      }
-    );
-  });
+      ],
+      expectedOutcome: "The command completes and returns stdout or stderr."
+    },
+    { approved: true },
+    config
+  );
+  const output = formatFootResultOutput(execution.result);
+  if (execution.result.status !== "completed" && execution.result.status !== "skipped") {
+    throw new Error(output);
+  }
+  return output;
 }
 
 export async function executeTool(

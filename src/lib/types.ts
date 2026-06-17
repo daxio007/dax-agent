@@ -372,6 +372,102 @@ export interface SpeakResult {
   createdAt: string;
 }
 
+export type FootRiskLevel = "F0" | "F1" | "F2" | "F3";
+
+export type FootActionKind =
+  | "run_command"
+  | "run_test"
+  | "run_build"
+  | "start_service"
+  | "stop_process";
+
+export type FootTargetKind =
+  | "workspace"
+  | "package_script"
+  | "system_process"
+  | "external_service";
+
+export type FootResultStatus =
+  | "completed"
+  | "rejected"
+  | "failed"
+  | "skipped"
+  | "timed_out";
+
+export interface FootAction {
+  id: string;
+  kind: FootActionKind;
+  targetKind: FootTargetKind;
+  command: string;
+  cwd: string;
+  reason: string;
+  expectedEffect: string;
+  inputSummary: string;
+  timeoutMs?: number;
+}
+
+export interface FootPlan {
+  id: string;
+  goal: string;
+  reason: string;
+  actions: FootAction[];
+  riskLevel: FootRiskLevel;
+  requiresPreview: boolean;
+  requiresApproval: boolean;
+  expectedOutcome: string;
+  createdAt: string;
+}
+
+export interface FootActionPreview {
+  actionId: string;
+  command: string;
+  cwd: string;
+  timeoutMs: number;
+  riskLevel: FootRiskLevel;
+  riskFlags: string[];
+  willExecute: boolean;
+  summary: string;
+}
+
+export interface FootPreview {
+  id: string;
+  planId: string;
+  summary: string;
+  commands: string[];
+  actionPreviews: FootActionPreview[];
+  riskLevel: FootRiskLevel;
+  riskFlags: string[];
+  requiresApproval: boolean;
+  createdAt: string;
+}
+
+export interface FootCommandResult {
+  actionId: string;
+  command: string;
+  cwd: string;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  output: string;
+  durationMs: number;
+  timedOut: boolean;
+}
+
+export interface FootResult {
+  id: string;
+  planId: string;
+  previewId?: string;
+  status: FootResultStatus;
+  commandResults: FootCommandResult[];
+  output?: string;
+  error?: string;
+  auditId?: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  createdAt: string;
+}
+
 export interface AppConfig {
   app: {
     name: string;
@@ -449,6 +545,10 @@ export interface AuditRecord {
   speakPlanId?: string;
   speakMessageId?: string;
   speakResultId?: string;
+  footPlanId?: string;
+  footPreviewId?: string;
+  footResultId?: string;
+  footRiskLevel?: FootRiskLevel;
   speakMode?: SpeakMode;
   speakAudience?: SpeakAudience;
   speakChannel?: SpeakChannel;
@@ -474,6 +574,9 @@ export interface Store {
   speakPlans: SpeakPlan[];
   speakMessages: SpeakMessage[];
   speakResults: SpeakResult[];
+  footPlans: FootPlan[];
+  footPreviews: FootPreview[];
+  footResults: FootResult[];
   audit: AuditRecord[];
 }
 

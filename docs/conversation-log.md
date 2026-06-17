@@ -107,3 +107,9 @@
 - 文档规定后续实现必须采用 `HandPlan -> HandPreview -> HandResult` 三段式，所有写入先 preview，再 policy gate，再 apply 和 audit。
 - 文档明确 `src/lib/hand.ts` 中每个 exported 方法，以及涉及路径、安全、风险、diff、hash、写入的关键内部 helper，都必须写 JSDoc，说明使用方法、作用和边界。
 - 当前下一步应根据这份实现设计开始写手能力第一阶段代码，先作为独立 capability 和 HTTP API 跑通，再等待 Agent Core 接入。
+- 用户要求脚能力也按同样步骤推进：直接写设计文档，写完再修改代码，最后提交；虽然不再反复对话，但必须按这个顺序完成。
+- Codex 新增 `docs/foot-capability-design.md`，把“脚/执行”定义为 DAX Agent 的第一类执行器，负责在受控边界内启动、观察和结束本地执行过程。
+- Codex 实现脚能力第一阶段运行时：新增 `src/lib/foot.ts`、Foot 类型、foot store/audit、foot HTTP API，并让现有 `shell.run` 复用脚能力。
+- 第一阶段脚能力只支持 workspace 内前台命令执行，采用 `FootPlan -> FootPreview -> FootResult`，捕获 stdout、stderr、exit code、timeout 和 duration。
+- 脚能力默认任何真实进程执行都需要审批；API 中 `approved: true` 表示调用方已完成审批。
+- Codex 新增 `docs/foot-capability-implementation.md` 记录代码入口、API、验证结果和当前边界。
