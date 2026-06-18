@@ -1,6 +1,6 @@
 # 项目记忆
 
-最后更新：2026-06-17
+最后更新：2026-06-18
 
 这个文件是 DAX Agent 的长期记忆。它用来保存那些应该跨越长对话、上下文压缩和未来开发会话继续有效的重要信息。
 
@@ -16,10 +16,12 @@
 - 听/耳朵第一阶段运行时已完成。听不是单纯自然语言理解，而是接收用户和环境信号，并转换成意图、约束、纠正、状态变化、上下文需求和记忆候选。
 - 嘴巴/表达第一阶段运行时已完成。嘴巴不应限制内容形态，而应控制受众、身份、外部影响、事实透明度和隐私边界。嘴巴可以回答、解释、追问、计划、汇报和生成草稿，但不能把草稿当发送、把计划当执行，或代表用户对外产生影响。
 - 2026-06-17 开始设计“大脑/Agent Core”。大脑不应全靠硬编码规则，也不应完全交给模型；模型负责思考和方案生成，代码负责骨架、边界、调度、schema 校验、Policy Gate 和审计。第一版大脑应支持低等级模型作为日常 Model Reasoner，高级模型只是未来可选升级。
+- 2026-06-17 已补充 `docs/agent-core-implementation-plan.md`。Agent Core 第一阶段实现必须先落类型、`src/lib/core.ts`、WorkingMemory、AgentDecision、CapabilityRoute、Policy Gate、审计和 JSDoc 规范，再接入自然语言主流程。手和脚第一阶段只能由大脑生成 `ActionProposal`，不能直接自动执行。
 - 2026-06-17 开始设计“手/修改”能力。手是第一类行动器，负责对本地或外部对象进行可审计、可预览、可确认的修改。第一版手应收窄到 workspace 写入和 patch，外部对象、数据库、GUI 应用和发送消息暂不实现。
 - 2026-06-17 明确手能力代码实现也必须先写实现设计文档，再写运行时代码。后续每个 exported 方法，以及涉及路径、安全、风险、diff、hash、写入的关键内部 helper，都必须有详细 JSDoc，解释使用方法、作用和边界。
 - 2026-06-17 已补充完整版手能力设计，并实现手能力第一阶段运行时。当前手能力支持 workspace 内文本文件创建、更新和结构化 `apply_patch`，采用 `HandPlan -> HandPreview -> HandResult`，并为完整版 adapter、rollback、外部对象和大脑接入预留类型字段。
 - 2026-06-17 已设计并实现“脚/执行”能力第一阶段。脚是第一类执行器，负责在受控边界内启动、观察和结束本地执行过程。第一版脚只做 workspace 内前台命令执行，采用 `FootPlan -> FootPreview -> FootResult`，并让现有 `shell.run` 复用脚能力审计链。
+- 2026-06-18 已完成 Agent Core 第一阶段运行时。自然语言消息现在经过 `ListenResult -> Agent Core -> optional ReadPlan -> AgentDecision -> PolicyGateResult -> CapabilityRoute -> SpeakPlan`。模型只给候选，代码负责硬控制、schema 校验、fallback、策略、路由和审计；手和脚目前只接收 `ActionProposal`，不会被大脑自动执行。
 
 ## 产品目标
 
@@ -39,7 +41,7 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 
 第一版已经迁移为 TypeScript-first 的 Node.js 本地应用。
 
-截至 2026-06-17，“读/眼睛”“听/耳朵”“嘴巴/表达”“手/修改”和“脚/执行”的第一阶段运行时已经完成。读和听已经推送到 `main` 分支；嘴巴运行时、大脑设计、手能力运行时和脚能力运行时已经在本地提交或准备提交。后续讨论和开发应把读、听、说、手、脚视为当前基线，而不是待设计事项。
+截至 2026-06-18，“读/眼睛”“听/耳朵”“嘴巴/表达”“手/修改”“脚/执行”和“Agent Core/大脑”的第一阶段运行时已经完成。后续讨论和开发应把读、听、说、手、脚和最小大脑视为当前基线，而不是待设计事项。
 
 主要模块：
 
@@ -47,7 +49,8 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 - `public/`：WebChat 控制台。
 - `src/web/app.ts`：WebChat 控制台 TypeScript 源码，编译为 `public/app.js`。
 - `src/lib/store.ts`：本地 JSON 持久化，保存 sessions、messages、toolRuns、audit。
-- `src/lib/agent.ts`：消息处理、slash command、模型调用流程、工具请求解析。
+- `src/lib/agent.ts`：消息处理、slash command，以及 `listen -> Agent Core -> optional read -> speak` 自然语言主流程。
+- `src/lib/core.ts`：Agent Core 核心，负责 WorkingMemory、AgentDecision、模型候选、fallback、Policy Gate、CapabilityRoute 和 ActionProposal。
 - `src/lib/tools.ts`：内置 workspace 工具和 shell 工具。
 - `src/lib/read.ts`：统一读能力核心。
 - `src/lib/listen.ts`：统一听能力核心。
@@ -61,6 +64,8 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 - `README.zh-CN.md`：中文项目说明。
 - `docs/agent-learning-model.md`：DAX Agent 的小孩模型、MCP/Skill 分层和按需学习设计。
 - `docs/agent-core-design.md`：DAX Agent 的最小大脑设计，定义 Agent Core、Model Reasoner、Working Memory、MemoryDecision、Policy Gate 和能力路由。
+- `docs/agent-core-implementation-plan.md`：Agent Core 第一阶段代码实现设计，规定类型、方法、自然语言主流程接入、审计、API、验证计划和 JSDoc 要求。
+- `docs/agent-core-implementation.md`：Agent Core 第一阶段运行时实现记录、API、验证结果和当前边界。
 - `docs/read-capability-design.md`：DAX Agent 的第一类感官，也就是安全读能力设计。
 - `docs/listen-capability-design.md`：DAX Agent 的第二类感官，也就是听能力设计。
 - `docs/speak-capability-design.md`：DAX Agent 的第三类表达器，也就是嘴巴能力设计。
@@ -116,6 +121,7 @@ http://127.0.0.1:18789
 - 嘴巴/表达第一阶段运行时。
 - 手/修改第一阶段运行时。
 - 脚/执行第一阶段运行时。
+- Agent Core/最小大脑第一阶段运行时。
 - 需要审批的 shell 工具。
 - Audit Trail。
 
@@ -140,6 +146,8 @@ http://127.0.0.1:18789
 - `docs/design-notes.md`：架构和设计说明。
 - `docs/agent-learning-model.md`：MCP、Skill、记忆和按需学习模型。
 - `docs/agent-core-design.md`：最小大脑、AgentDecision、Model Reasoner、Working Memory、MemoryDecision、Policy Gate 和能力路由。
+- `docs/agent-core-implementation-plan.md`：Agent Core 第一阶段实现设计，尤其是 `src/lib/core.ts`、WorkingMemory、CapabilityRoute、ActionProposal、审计和 JSDoc 规范。
+- `docs/agent-core-implementation.md`：Agent Core 代码入口、模型候选协议、fallback、API、审计、验证结果和当前边界。
 - `docs/read-capability-design.md`：读能力、Read Plan、Context Filter 和 MCP resource 映射。
 - `docs/listen-capability-design.md`：听能力、ListenEvent、ListenResult、Intent、Constraint、Correction 和 Context Need。
 - `docs/speak-capability-design.md`：嘴巴能力、SpeakPlan、SpeakMessage、SpeakResult、受众、草稿和表达边界。
@@ -301,6 +309,22 @@ http://127.0.0.1:18789
 - 大脑应先真正控制听、读、说三类能力；四肢暂时只输出 `ActionProposal`，不直接执行。
 - 大脑需要引入 `AgentDecision`、`WorkingMemory`、`MemoryDecision`、`SkillDecision`、`ActionProposal` 和 `PolicyGateResult` 等结构。
 
+## 2026-06-17 Agent Core 第一阶段实现设计
+
+本轮新增 `docs/agent-core-implementation-plan.md`，把最小大脑从概念设计推进到第一阶段代码实现方案。
+
+设计结论：
+
+- 第一阶段主流程应演进为 `ListenResult -> Agent Core -> AgentDecision -> CapabilityRoute -> SpeakPlan/ActionProposal`。
+- Agent Core 是控制平面，不替代读、听、说、手、脚各自的能力核心。
+- 模型只负责候选推理，代码负责 schema 校验、硬控制信号、Policy Gate、能力路由、fallback 和 audit。
+- 第一阶段必须新增 `WorkingMemory`、`AgentDecision`、`MemoryDecision`、`SkillDecision`、`ActionProposal`、`PolicyGateResult`、`CapabilityRoute` 和 `AgentCoreResult` 等结构。
+- 自然语言主流程应先接入 Agent Core；slash command 第一阶段可保持现有直接路径。
+- Agent Core 可以触发一次自动读上下文，并把 `ContextBlock` 合并进短期 `WorkingMemory`。
+- 手和脚在第一阶段只能接收 `ActionProposal`，不能被 Agent Core 直接执行。
+- 没有真实 `HandResult` 或 `FootResult` 时，嘴巴不能说“已修改”或“已执行”。
+- 后续实现 `src/lib/core.ts` 时，每个 exported 方法和关键 helper 都必须有详细 JSDoc，说明使用方法、作用和边界。
+
 ## 2026-06-17 手能力设计
 
 本轮新增 `docs/hand-capability-design.md`，把“手/修改”定义为 DAX Agent 的第一类行动器。
@@ -379,3 +403,41 @@ http://127.0.0.1:18789
 - `start_service`、`stop_process`、外部服务、远程执行、GUI、长期后台进程和流式输出暂不实现。
 - 风险识别是启发式，覆盖 destructive、network、dependency、long-running、build、test 等标记，但不等同完整沙箱。
 - 每个 exported 方法和关键内部 helper 已写 JSDoc，说明使用方法、作用和边界。
+
+## 2026-06-18 Agent Core 第一阶段运行时
+
+本轮根据 `docs/agent-core-implementation-plan.md` 完成最小大脑运行时，并新增 `docs/agent-core-implementation.md`。
+
+已实现：
+
+- `src/lib/types.ts` 新增 `WorkingMemory`、`AgentDecision`、`MemoryDecision`、`SkillDecision`、`ActionProposal`、`PolicyGateResult`、`CapabilityRoute`、`ModelReasoningResult` 和 `AgentCoreResult`。
+- `src/lib/core.ts` 新增大脑核心，覆盖 hard control、按需读取、工作记忆、模型候选、schema 校验、fallback、Policy Gate、能力路由和 SpeakPlan。
+- `src/lib/store.ts` 新增 Agent Core 决策、策略、路由和完整结果持久化，以及 `agent.core.*`、`agent.decision.created`、`agent.policy.checked`、`agent.route.created` 审计。
+- `src/lib/agent.ts` 的自然语言主流程已变为 `listen -> Agent Core -> optional read -> Agent Core -> speak`。
+- `src/server.ts` 新增 `/api/core/decide`、Agent Core results、decisions、policy gates 和 capability routes API。
+
+核心边界：
+
+- stop、pause、纯 resume、status 和“只讨论、不写代码”等信号由代码优先处理。
+- 模型只能输出严格 JSON 候选；echo、模型失败、非法 JSON 或候选校验失败会走本地 fallback。
+- 同一轮自然语言消息最多自动执行一次 ReadPlan。
+- hand 和 foot 只生成 `ActionProposal`，不能被 Agent Core 直接 apply 或 execute。
+- Policy Gate 阻止候选时，嘴巴会输出明确边界说明，不沿用模型可能带行动承诺的原文。
+- MemoryDecision 第一阶段只是候选，不自动修改长期记忆文档。
+- Skill Runtime 尚未实现，recall skill 会被 Policy Gate 阻止并说明原因。
+
+验证结果：
+
+- 服务端 TypeScript typecheck 通过。
+- Web TypeScript typecheck 通过。
+- 服务端 build 通过。
+- Web build 通过。
+- stop、read_context、read 后 hand proposal、malformed JSON fallback 的核心冒烟通过。
+- 真实 `processUserMessage()` 验证产生两次决策、一次读取、零工具请求和零 HandResult。
+- Agent Core HTTP decide 和四个查询 API 验证通过，测试服务结束后已停止。
+
+下一步：
+
+- 实现 `ActionProposal -> HandPlan/FootPlan -> Preview -> Approval -> Result`。
+- 审批必须绑定具体 plan，不能只根据一句自然语言“同意”隐式选择动作。
+- 只有真实 `HandResult` 或 `FootResult` 才能让嘴巴汇报已经修改或执行。

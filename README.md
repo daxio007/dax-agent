@@ -64,6 +64,12 @@ These commands work even before a real model is configured:
 
 Read-only tools run automatically inside the workspace. Shell commands are always created as pending tool runs and must be approved in the control console.
 
+## Agent Core
+
+Natural-language messages now follow `listen -> Agent Core -> optional read -> decision -> speak`. The model only proposes structured decisions; code validates them, applies the Policy Gate, creates an auditable capability route, and falls back locally when the model is unavailable.
+
+Hand and foot decisions remain proposals. Agent Core does not automatically modify files or execute commands.
+
 ## Safety model
 
 - The gateway only serves `127.0.0.1` by default.
@@ -82,6 +88,8 @@ This is intentionally a small, inspectable foundation. More channels, richer ski
 - `docs/design-notes.md`
 - `docs/agent-learning-model.md`
 - `docs/agent-core-design.md`
+- `docs/agent-core-implementation-plan.md`
+- `docs/agent-core-implementation.md`
 - `docs/read-capability-design.md`
 - `docs/listen-capability-design.md`
 - `docs/speak-capability-design.md`

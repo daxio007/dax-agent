@@ -1,22 +1,22 @@
 # 路线图
 
-最后更新：2026-06-17
+最后更新：2026-06-18
 
 ## 当前阶段
 
-学习型 MVP，当前已经完成“读/眼睛”“听/耳朵”“嘴巴/表达”“手/修改”和“脚/执行”的第一阶段运行时。读和听已经推送到 `main` 分支，嘴巴运行时、大脑设计、手能力运行时和脚能力运行时已经在本地提交或准备提交。
+学习型 MVP，当前已经完成“读/眼睛”“听/耳朵”“嘴巴/表达”“手/修改”“脚/执行”和“Agent Core/大脑”的第一阶段运行时。
 
-当前最重要的目标不是继续堆功能，而是先理解并实现 Agent 收到自然语言后的行为模型，并设计最小大脑 Agent Core。
+当前最重要的目标是把大脑生成的 `ActionProposal` 安全接到手和脚的 plan、preview、approval 和 result 链路。
 
 当前已支持中文/英文界面切换，默认中文。
 
-当前新增设计方向：先围绕 MCP 和 Skill 建立 DAX Agent 的按需学习模型。第一阶段已经把“小孩模型”里的眼睛、耳朵、嘴巴、手和脚落到第一阶段运行时，并开始准备 Agent Core 把这些能力统一调度起来。
+当前新增设计方向：先围绕 MCP 和 Skill 建立 DAX Agent 的按需学习模型。第一阶段已经把“小孩模型”里的眼睛、耳朵、嘴巴、手、脚和最小大脑落到 TypeScript 运行时。
 
 项目实现语言已明确为 TypeScript-first，不使用 Python。
 
 ## 下一优先级
 
-下一步让 Natural Language Operation Protocol 变成“先听，再按需读，再进入 Agent Core”的流程。
+下一步把 Agent Core 的行动建议变成“proposal -> plan -> preview -> approval -> result”的受控行动流程。
 
 计划工作：
 
@@ -33,16 +33,17 @@
 11. 已完成手能力第一阶段运行时：`src/lib/hand.ts`、hand API、hand store/audit、workspace patch preview / apply / result。
 12. 已完成 `docs/foot-capability-design.md`：脚/执行能力设计，明确 FootPlan、FootPreview、FootResult、本地命令执行、F0-F3 分级和审批边界。
 13. 已完成脚能力第一阶段运行时：`src/lib/foot.ts`、foot API、foot store/audit，以及 `shell.run` 接入脚能力。
-14. 下一步：实现 Agent Core 第一阶段类型和骨架。
-15. 再让自然语言 Agent Core 根据 ListenResult 判断何时需要读取，并自动生成/执行 ReadPlan。
-16. 再把 ContextBlock 注入 Agent Core 的工作上下文。
-17. 再让 SpeakPlan 承接 AgentDecision，把回答、追问、计划、结果汇报和草稿统一成表达层。
-18. 再把手能力和脚能力接入 Agent Core 的 `ActionProposal -> HandPlan/FootPlan`。
-19. 再增强手能力：rollback、dirty workspace 检测、adapter 层和更好的 diff。
-20. 之后再设计 Skill 文件格式和 Skill Index。
-21. 设计 MCP Client Manager 如何接入现有 toolRuns 审批系统。
-22. 设计 Episode Store，用来记录一次完整任务经历。
-23. 设计 Skill Distiller，把成功经验整理成 draft Skill。
+14. 已完成 `docs/agent-core-implementation-plan.md`：Agent Core 第一阶段实现设计，明确类型、模块、方法、JSDoc、审计、API、验证计划和接入顺序。
+15. 已完成 Agent Core 第一阶段类型、store、audit 和 `src/lib/core.ts`。
+16. 已完成自然语言 Agent Core 根据 ListenResult 判断是否需要读取，并最多自动执行一次 ReadPlan。
+17. 已完成把 ContextBlock 注入 WorkingMemory，并进行第二次决策。
+18. 已完成让 SpeakPlan 承接 AgentDecision，Policy Gate 阻止时会生成明确边界说明。
+19. 已完成 Agent Core 生成 hand/foot ActionProposal；下一步接入 `ActionProposal -> HandPlan/FootPlan -> Preview -> Approval -> Result`。
+20. 再增强手能力：rollback、dirty workspace 检测、adapter 层和更好的 diff。
+21. 之后再设计 Skill 文件格式和 Skill Index。
+22. 设计 MCP Client Manager 如何接入现有 toolRuns 审批系统。
+23. 设计 Episode Store，用来记录一次完整任务经历。
+24. 设计 Skill Distiller，把成功经验整理成 draft Skill。
 
 ## 未来工作
 
@@ -76,6 +77,7 @@
 - Listen Capability、Intent、Constraint、Correction 和 Context Need。
 - Speak Capability、SpeakPlan、SpeakMessage、草稿、受众和表达边界。
 - Agent Core、Model Reasoner、AgentDecision、Working Memory、MemoryDecision 和 Policy Gate。
+- Agent Core Implementation、CapabilityRoute、ActionProposal、Policy Gate 审计和自然语言主流程接入。
 - Hand Capability、HandPlan、HandPreview、Patch、H0-H3 修改风险和审批边界。
 - Hand Implementation、workspace write、unified diff、hash guard、HandResult 和 JSDoc 规范。
 - Foot Capability、FootPlan、FootPreview、FootResult、命令执行、timeout、F0-F3 执行风险和审批边界。

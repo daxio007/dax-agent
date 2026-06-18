@@ -574,6 +574,170 @@ export interface FootResult {
   createdAt: string;
 }
 
+export type AgentDecisionType =
+  | "answer_directly"
+  | "ask_user"
+  | "read_context"
+  | "store_memory"
+  | "recall_skill"
+  | "propose_hand_action"
+  | "propose_foot_action"
+  | "wait_for_approval"
+  | "pause"
+  | "stop";
+
+export type AgentDecisionSource = "rule" | "model" | "fallback";
+
+export type AgentRiskLevel = "low" | "medium" | "high";
+
+export interface MemoryDecision {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  kind: "raw" | "episodic" | "semantic" | "procedural";
+  value: string;
+  reason: string;
+  shouldStore: boolean;
+  sensitivity: AgentRiskLevel;
+  sourceListenResultId?: string;
+}
+
+export interface SkillDecision {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  shouldRecall: boolean;
+  shouldCreateCandidate: boolean;
+  skillQuery?: string;
+  reason: string;
+}
+
+export interface ActionProposal {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  kind: "hand" | "foot";
+  title: string;
+  reason: string;
+  risk: AgentRiskLevel;
+  requiresApproval: boolean;
+  suggestedHandPlan?: Partial<HandPlan>;
+  suggestedFootPlan?: Partial<FootPlan>;
+}
+
+export interface PolicyGateResult {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  allowed: boolean;
+  decisionType: AgentDecisionType;
+  risk: AgentRiskLevel;
+  reasons: string[];
+  requiredApprovals: string[];
+  blockedCapabilities: string[];
+}
+
+export interface CapabilityRoute {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  decisionId: string;
+  capability: "read" | "speak" | "hand" | "foot" | "memory" | "skill" | "none";
+  mode: "execute" | "propose" | "record" | "skip";
+  reason: string;
+}
+
+export interface AgentDecisionCandidate {
+  type?: AgentDecisionType;
+  reason?: string;
+  confidence?: number;
+  userVisibleSummary?: string;
+  memoryKind?: MemoryDecision["kind"];
+  memoryValue?: string;
+  skillQuery?: string;
+  actionTitle?: string;
+  actionReason?: string;
+  actionRisk?: AgentRiskLevel;
+}
+
+export interface ModelReasoningInput {
+  locale: Locale;
+  userText: string;
+  listenSummary: string;
+  workingMemorySummary: string;
+  contextSummary: string;
+  readFailure?: string;
+  allowedDecisionTypes: AgentDecisionType[];
+}
+
+export interface ModelReasoningResult {
+  id: string;
+  createdAt: string;
+  rawText: string;
+  parsedDecision?: AgentDecisionCandidate;
+  parseError?: string;
+  provider: string;
+  model: string;
+}
+
+export interface WorkingMemory {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  userGoal: string;
+  activeConstraints: string[];
+  recentIntentLabels: string[];
+  contextSummary: string;
+  contextBlockIds: string[];
+  pendingQuestions: string[];
+  pendingActionProposalIds: string[];
+  memoryCandidates: MemoryDecision[];
+}
+
+export interface AgentCoreInput {
+  sessionId: string;
+  userMessageId: string;
+  userText: string;
+  locale: Locale;
+  listenResult: ListenResult;
+  recentMessages: Message[];
+  contextBlocks: ContextBlock[];
+  pendingToolRuns: ToolRun[];
+  config: AppConfig;
+  readAttempted: boolean;
+  readFailure?: string;
+}
+
+export interface AgentDecision {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  type: AgentDecisionType;
+  reason: string;
+  confidence: number;
+  userVisibleSummary: string;
+  readPlan?: ReadPlan;
+  speakPlan?: SpeakPlan;
+  actionProposal?: ActionProposal;
+  memoryDecision?: MemoryDecision;
+  skillDecision?: SkillDecision;
+  policyGate?: PolicyGateResult;
+  source: AgentDecisionSource;
+}
+
+export interface AgentCoreResult {
+  id: string;
+  sessionId: string;
+  createdAt: string;
+  inputSummary: string;
+  workingMemory: WorkingMemory;
+  decision: AgentDecision;
+  route: CapabilityRoute;
+  policyGate: PolicyGateResult;
+  modelReasoning?: ModelReasoningResult;
+  warnings: string[];
+}
+
 export interface AppConfig {
   app: {
     name: string;
@@ -659,6 +823,13 @@ export interface AuditRecord {
   footPreviewId?: string;
   footResultId?: string;
   footRiskLevel?: FootRiskLevel;
+  agentCoreResultId?: string;
+  agentDecisionId?: string;
+  policyGateResultId?: string;
+  capabilityRouteId?: string;
+  agentDecisionType?: AgentDecisionType;
+  agentDecisionSource?: AgentDecisionSource;
+  agentRiskLevel?: AgentRiskLevel;
   speakMode?: SpeakMode;
   speakAudience?: SpeakAudience;
   speakChannel?: SpeakChannel;
@@ -670,6 +841,7 @@ export interface AuditRecord {
   tool?: string;
   status?: ToolStatus;
   approvalRequired?: boolean;
+  detail?: string;
   createdAt: string;
 }
 
@@ -690,6 +862,10 @@ export interface Store {
   footPlans: FootPlan[];
   footPreviews: FootPreview[];
   footResults: FootResult[];
+  agentDecisions: AgentDecision[];
+  policyGateResults: PolicyGateResult[];
+  capabilityRoutes: CapabilityRoute[];
+  agentCoreResults: AgentCoreResult[];
   audit: AuditRecord[];
 }
 

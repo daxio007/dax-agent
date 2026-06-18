@@ -7,8 +7,12 @@ import { loadConfig, maskConfig, saveLocalConfig } from "./lib/config.js";
 import {
   createSession,
   deleteSession,
+  getRecentMessages,
   getSession,
+  listAgentCoreResults,
+  listAgentDecisions,
   listAudit,
+  listCapabilityRoutes,
   listFootPlans,
   listFootPreviews,
   listFootResults,
@@ -18,6 +22,7 @@ import {
   recordHandResult,
   listListenEvents,
   listListenResults,
+  listPolicyGateResults,
   listReadEvents,
   listSessions,
   listSpeakMessages,
@@ -27,6 +32,11 @@ import {
   updateToolRun
 } from "./lib/store.js";
 import { processUserMessage } from "./lib/agent.js";
+import {
+  createAgentCoreInput,
+  decideNextStep,
+  recordAgentCoreFailure
+} from "./lib/core.js";
 import { executeToolRun } from "./lib/tools.js";
 import {
   coerceFootAction,
@@ -61,7 +71,9 @@ import {
   type CreateSpeakPlanInput
 } from "./lib/speak.js";
 import type {
+  AgentCoreResult,
   AppConfig,
+  ContextBlock,
   DeepPartial,
   FootPlan,
   HandPlan,
@@ -71,6 +83,7 @@ import type {
   ListenPrivacyLevel,
   ListenTrust,
   ReadPlan,
+  ReadResult,
   ReadSource,
   SpeakMessage,
   SpeakPlan,
@@ -663,6 +676,113 @@ function optionalSpeakSourceRefs(value: unknown): SpeakSourceRef[] | undefined {
   return value.map((item) => coerceSpeakSourceRef(item));
 }
 
+/**
+ * 从调试 API 请求体运行一次 Agent Core 决策，可选执行一次 read round。
+ *
+ * 使用方法：
+ * - POST /api/core/decide 传入 content、可选 sessionId、locale 和 executeReadRound。
+ * - executeReadRound=false 时只返回第一次判断，适合检查是否会选择 read_context。
+ * - executeReadRound=true 时，如果第一次 route 是 read，会执行一次 ReadPlan 并返回第二次最终判断。
+ *
+ * 作用：
+ * - 为开发、测试和未来调试 UI 提供不创建聊天消息的 Agent Core 入口。
+ * - 复用正式 Listen、Read、Agent Core、store 和 audit 链路。
+ *
+ * 边界：
+ * - 不自动调用手或脚。
+ * - 不创建 assistant message；用户可见表达仍由正式 processUserMessage() 负责。
+ */
+async function decideAgentCoreFromBody(body: JsonObject): Promise<JsonObject> {
+  const content = optionalString(body.content) || optionalString(body.rawText);
+  if (!content) {
+    throw createHttpError("Agent Core decide requires content.");
+  }
+  const sessionId = optionalString(body.sessionId) || "core-debug";
+  const locale = optionalString(body.locale) || "zh-CN";
+  const recentMessages = await getRecentMessages(sessionId, 30);
+  const listenAnalysis = await analyzeAndRecordListenEvent(
+    {
+      kind: "user_text",
+      channelId: "core-api",
+      sessionId,
+      locale,
+      rawText: content,
+      sourceLabel: "Agent Core API"
+    },
+    recentMessages
+  );
+  const config = await loadConfig();
+  const pendingToolRuns = (await listToolRuns(sessionId)).filter((run) =>
+    ["pending", "approved", "running"].includes(run.status)
+  );
+  const coreResults: AgentCoreResult[] = [];
+  let contextBlocks: ContextBlock[] = [];
+  let readResults: ReadResult[] = [];
+
+  try {
+    const firstResult = await decideNextStep(
+      createAgentCoreInput({
+        sessionId,
+        userMessageId: optionalString(body.messageId) || `core-api-${listenAnalysis.result.id}`,
+        userText: content,
+        locale,
+        listenResult: listenAnalysis.result,
+        recentMessages,
+        pendingToolRuns,
+        config
+      })
+    );
+    coreResults.push(firstResult);
+    let finalResult = firstResult;
+
+    if (
+      optionalBoolean(body.executeReadRound) === true &&
+      firstResult.route.capability === "read" &&
+      firstResult.route.mode === "execute" &&
+      firstResult.policyGate.allowed &&
+      firstResult.decision.readPlan
+    ) {
+      let readFailure: string | undefined;
+      try {
+        const output = await executeAndRecordReadPlan(firstResult.decision.readPlan, config);
+        contextBlocks = output.contextBlocks;
+        readResults = output.results;
+      } catch (error) {
+        readFailure = error instanceof Error ? error.message : String(error);
+      }
+
+      finalResult = await decideNextStep(
+        createAgentCoreInput({
+          sessionId,
+          userMessageId: optionalString(body.messageId) || `core-api-${listenAnalysis.result.id}`,
+          userText: content,
+          locale,
+          listenResult: listenAnalysis.result,
+          recentMessages,
+          contextBlocks,
+          pendingToolRuns,
+          config,
+          readAttempted: true,
+          readFailure
+        })
+      );
+      coreResults.push(finalResult);
+    }
+
+    return {
+      listenEvent: listenAnalysis.event,
+      listenResult: listenAnalysis.result,
+      agentCoreResult: finalResult,
+      agentCoreResults: coreResults,
+      contextBlocks,
+      readResults
+    };
+  } catch (error) {
+    await recordAgentCoreFailure(sessionId, error);
+    throw error;
+  }
+}
+
 async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost");
   const unsafePath = decodeURIComponent(url.pathname);
@@ -780,6 +900,35 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
 
   if (method === "GET" && url.pathname === "/api/tool-runs") {
     sendJson(res, 200, await listToolRuns(url.searchParams.get("sessionId")));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/core/decide") {
+    sendJson(res, 201, await decideAgentCoreFromBody(await readBody(req)));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/agent-core-results" || url.pathname === "/api/core/results")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listAgentCoreResults(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/agent-decisions" || url.pathname === "/api/core/decisions")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listAgentDecisions(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/policy-gate-results" || url.pathname === "/api/core/policy-gates")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listPolicyGateResults(limit));
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/capability-routes" || url.pathname === "/api/core/routes")) {
+    const limit = optionalPositiveNumber(url.searchParams.get("limit")) || 100;
+    sendJson(res, 200, await listCapabilityRoutes(limit));
     return;
   }
 

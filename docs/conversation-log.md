@@ -119,3 +119,16 @@
 - 第一阶段手能力支持 workspace 内文本文件创建、更新和结构化 `apply_patch`，采用 `HandPlan -> HandPreview -> HandResult`。
 - 当前 `apply_patch` 不是任意 diff parser，而是应用结构化 action.content 作为目标最终内容；删除、移动、外部对象、数据库、GUI、剪贴板和消息草稿暂不应用。
 - Codex 新增 `docs/hand-capability-implementation.md` 记录代码入口、API、验证结果和当前边界。
+- 用户提出接下来应该继续研究最重要的大脑。
+- Codex 建议先补一份 Agent Core 第一阶段实现设计文档，再写代码，避免因为四肢已经出现而让大脑边界变乱。
+- 用户同意。
+- Codex 新增 `docs/agent-core-implementation-plan.md`，明确第一阶段主流程为 `ListenResult -> Agent Core -> AgentDecision -> CapabilityRoute -> SpeakPlan/ActionProposal`。
+- 文档规定 Agent Core 是控制平面，模型只给候选推理，代码负责硬控制信号、schema 校验、Policy Gate、能力路由、fallback 和 audit。
+- 文档规定后续实现 `src/lib/core.ts` 时，每个 exported 方法和关键 helper 都必须写详细 JSDoc，说明使用方法、作用和边界。
+- 用户要求根据 Agent Core 实现设计开始写代码，并再次强调每个方法必须有详细 doc，解释作用和用法。
+- Codex 新增 `src/lib/core.ts`、Agent Core 类型、store、audit 和调试 API。
+- 自然语言消息主流程已经升级为 `ListenResult -> Agent Core -> optional ReadPlan -> Agent Core -> SpeakPlan`。
+- Agent Core 支持 hard control、WorkingMemory、严格 JSON 模型候选、schema 校验、echo/model fallback、Policy Gate、CapabilityRoute、MemoryDecision、SkillDecision 和 ActionProposal。
+- Agent Core 第一阶段只允许 hand/foot proposal，不会自动 apply 或 execute，也不会在没有真实结果时声称已经修改或执行。
+- Codex 通过服务端和 Web typecheck、build、核心函数冒烟、真实 `processUserMessage()` 和 HTTP API 验证第一阶段运行时。
+- Codex 新增 `docs/agent-core-implementation.md` 记录代码入口、方法、API、审计、验证结果和当前边界。

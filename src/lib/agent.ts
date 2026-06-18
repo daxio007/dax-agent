@@ -3,20 +3,28 @@ import {
   addMessage,
   createToolRun,
   getRecentMessages,
+  listToolRuns,
+  recordSpeakInteraction,
   updateToolRun
 } from "./store.js";
-import { completeChat } from "./providers.js";
-import { executeTool, executeToolRun, getTool, toolManifest } from "./tools.js";
+import { createAgentCoreInput, decideNextStep, recordAgentCoreFailure } from "./core.js";
+import { executeAndRecordReadPlan } from "./read.js";
+import { executeTool, getTool } from "./tools.js";
 import { analyzeAndRecordUserText } from "./listen.js";
-import { createAndRecordSpeakInteraction, speakModeFromListenResult } from "./speak.js";
+import {
+  createAndRecordSpeakInteraction,
+  createSpeakMessage,
+  createSpeakResult
+} from "./speak.js";
 import type {
-  AppConfig,
-  ChatMessage,
+  AgentCoreResult,
+  ContextBlock,
   JsonObject,
   ListenEvent,
   ListenResult,
   Locale,
   Message,
+  ReadResult,
   SpeakAudience,
   SpeakChannel,
   SpeakContentType,
@@ -48,6 +56,10 @@ interface ProcessUserMessageResult {
   speakPlan: SpeakPlan;
   speakMessage: SpeakMessage;
   speakResult: SpeakResult;
+  agentCoreResult?: AgentCoreResult;
+  agentCoreResults: AgentCoreResult[];
+  contextBlocks: ContextBlock[];
+  readResults: ReadResult[];
 }
 
 interface AssistantMessageWithSpeak {
@@ -58,6 +70,7 @@ interface AssistantMessageWithSpeak {
 }
 
 interface AddSpokenAssistantMessageOptions {
+  plan?: SpeakPlan;
   mode?: SpeakMode;
   audience?: SpeakAudience;
   channel?: SpeakChannel;
@@ -78,39 +91,6 @@ function isZh(locale: Locale): boolean {
   return String(locale || "").toLowerCase().startsWith("zh");
 }
 
-function systemPrompt(config: AppConfig, locale: Locale): string {
-  return [
-    `You are ${config.app?.name || "DAX Agent"}, a local-first personal AI agent gateway.`,
-    "You help the user operate this workspace safely and transparently.",
-    `The user's interface locale is ${locale}. Reply in ${isZh(locale) ? "Chinese" : "English"} unless the user asks otherwise.`,
-    "Use concise responses. When a task needs local data or command execution, request a tool instead of pretending you used it.",
-    "",
-    "Available tools:",
-    JSON.stringify(toolManifest, null, 2),
-    "",
-    "To request tools, include exactly one fenced block like this:",
-    "```tool_request",
-    "[{\"tool\":\"workspace.list\",\"input\":{\"path\":\".\"}}]",
-    "```",
-    "Read-only tools may run automatically. shell.run always waits for explicit user approval."
-  ].join("\n");
-}
-
-function extractToolRequests(content: string): Array<{ tool: string; input?: JsonObject }> {
-  const block = content.match(/```tool_request\s*([\s\S]*?)```/i);
-  if (!block) return [];
-  try {
-    const parsed = JSON.parse((block[1] || "[]").trim());
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    return [];
-  }
-}
-
-function cleanAssistantContent(content: string): string {
-  return content.replace(/```tool_request\s*[\s\S]*?```/gi, "").trim();
-}
-
 /**
  * 通过“嘴巴”能力创建 assistant 消息并写入会话。
  *
@@ -129,24 +109,39 @@ async function addSpokenAssistantMessage(
   locale: Locale,
   options: AddSpokenAssistantMessageOptions = {}
 ): Promise<AssistantMessageWithSpeak> {
-  const speak = await createAndRecordSpeakInteraction({
-    sessionId,
-    content,
-    locale: String(locale),
-    mode: options.mode || "answer",
-    audience: options.audience || "user",
-    channel: options.channel || "local_chat",
-    identity: options.identity,
-    contentTypes: options.contentTypes,
-    sourceRefs: options.sourceRefs,
-    assumptions: options.assumptions,
-    uncertaintyFlags: options.uncertaintyFlags,
-    riskFlags: options.riskFlags,
-    draft: options.draft,
-    title: options.title,
-    goal: options.goal,
-    reason: options.reason
-  });
+  let speak: { plan: SpeakPlan; message: SpeakMessage; result: SpeakResult };
+  if (options.plan) {
+    const message = createSpeakMessage(options.plan, {
+      content,
+      title: options.title,
+      sourceRefs: options.sourceRefs,
+      assumptions: options.assumptions,
+      uncertaintyFlags: options.uncertaintyFlags,
+      riskFlags: options.riskFlags,
+      draft: options.draft
+    });
+    const result = createSpeakResult(options.plan, message);
+    speak = await recordSpeakInteraction(options.plan, message, result, sessionId);
+  } else {
+    speak = await createAndRecordSpeakInteraction({
+        sessionId,
+        content,
+        locale: String(locale),
+        mode: options.mode || "answer",
+        audience: options.audience || "user",
+        channel: options.channel || "local_chat",
+        identity: options.identity,
+        contentTypes: options.contentTypes,
+        sourceRefs: options.sourceRefs,
+        assumptions: options.assumptions,
+        uncertaintyFlags: options.uncertaintyFlags,
+        riskFlags: options.riskFlags,
+        draft: options.draft,
+        title: options.title,
+        goal: options.goal,
+        reason: options.reason
+      });
+  }
   const meta: JsonObject = {
     ...(options.meta || {}),
     speakPlanId: speak.plan.id,
@@ -319,33 +314,23 @@ async function handleSlash(
   throw new Error("Unsupported slash command.");
 }
 
-async function createRunsFromAssistant(
-  sessionId: string,
-  assistantMessage: Message,
-  config: AppConfig
-): Promise<(ToolRun | null)[]> {
-  const requests = extractToolRequests(assistantMessage.content);
-  const runs = [];
-  for (const request of requests) {
-    const tool = getTool(request.tool);
-    if (!tool) continue;
-    const approvalRequired = Boolean(tool.approvalRequired);
-    const run = await createToolRun(
-      sessionId,
-      assistantMessage.id,
-      request.tool,
-      request.input || {},
-      approvalRequired
-    );
-    if (!approvalRequired && config.security?.autoRunReadTools) {
-      runs.push(await executeToolRun(run.id));
-    } else {
-      runs.push(run);
-    }
-  }
-  return runs;
-}
-
+/**
+ * 处理一条用户消息，并返回听、脑、读和说四层的结构化结果。
+ *
+ * 使用方法：
+ * - HTTP 消息入口调用 processUserMessage(sessionId, content, locale)。
+ * - slash command 继续走显式本地命令路径。
+ * - 普通自然语言会先经过 ListenResult，再进入 Agent Core；如果大脑要求上下文，最多自动执行一次 ReadPlan。
+ *
+ * 作用：
+ * - 把原来的“听完直接调用模型”升级为“听 -> 大脑 -> 按需读 -> 再决策 -> 嘴巴表达”。
+ * - 把 AgentCoreResult、ContextBlock 和 ReadResult 一起返回给 API，方便调试和未来前端展示。
+ *
+ * 边界：
+ * - Agent Core 不会在这里自动调用手或脚。
+ * - ActionProposal 只会作为建议进入消息 meta，不会写文件或执行命令。
+ * - slash command 的现有审批和工具行为保持不变。
+ */
 export async function processUserMessage(
   sessionId: string,
   content: string,
@@ -381,67 +366,108 @@ export async function processUserMessage(
       listenResult: listenAnalysis.result,
       speakPlan: slashResult.speakPlan,
       speakMessage: slashResult.speakMessage,
-      speakResult: slashResult.speakResult
+      speakResult: slashResult.speakResult,
+      agentCoreResults: [],
+      contextBlocks: [],
+      readResults: []
     };
   }
 
   const history = await getRecentMessages(sessionId, 30);
-  const messages: ChatMessage[] = [
-    { role: "system", content: systemPrompt(config, locale) },
-    ...history.map((message) => ({
-      role: message.role,
-      content: message.content
-    }))
-  ];
+  const pendingToolRuns = (await listToolRuns(sessionId)).filter((run) =>
+    ["pending", "approved", "running"].includes(run.status)
+  );
+  const agentCoreResults: AgentCoreResult[] = [];
+  let contextBlocks: ContextBlock[] = [];
+  let readResults: ReadResult[] = [];
 
   try {
-    const completion = await completeChat(config, messages, locale);
-    const rawContent = completion.content;
-    const fallbackContent = isZh(locale)
-      ? "我请求了一次工具运行，请在工具面板中查看。"
-      : "I requested a tool run. Review the tool panel.";
-    const displayContent = cleanAssistantContent(rawContent) || fallbackContent;
-    const spoken = await addSpokenAssistantMessage(sessionId, displayContent, locale, {
-      mode: speakModeFromListenResult(listenAnalysis.result),
-      contentTypes: ["markdown"],
-      sourceRefs: [
-        { kind: "listen_result", id: listenAnalysis.result.id, label: listenAnalysis.result.primaryIntent },
-        { kind: "user_message", id: userMessage.id, label: "current user message" }
-      ],
-      meta: {
-        provider: completion.provider,
-        model: completion.model,
-        rawContent
-      }
-    });
-    const toolRuns = await createRunsFromAssistant(
+    const firstInput = createAgentCoreInput({
       sessionId,
-      { ...spoken.message, content: rawContent },
-      config
-    );
-    return {
-      userMessage,
-      assistantMessage: spoken.message,
-      toolRuns,
-      listenEvent: listenAnalysis.event,
+      userMessageId: userMessage.id,
+      userText: content,
+      locale,
       listenResult: listenAnalysis.result,
-      speakPlan: spoken.speakPlan,
-      speakMessage: spoken.speakMessage,
-      speakResult: spoken.speakResult
-    };
-  } catch (error) {
-    const content = isZh(locale)
-      ? `模型错误：${error instanceof Error ? error.message : String(error)}\n\n你可以在设置中调整 Provider，或使用 /help 查看本地命令。`
-      : `Model error: ${error instanceof Error ? error.message : String(error)}\n\nUse Settings to adjust the provider, or use /help for local commands.`;
+      recentMessages: history,
+      pendingToolRuns,
+      config
+    });
+    const firstResult = await decideNextStep(firstInput);
+    agentCoreResults.push(firstResult);
+    let finalResult = firstResult;
+
+    if (
+      firstResult.route.capability === "read" &&
+      firstResult.route.mode === "execute" &&
+      firstResult.policyGate.allowed &&
+      firstResult.decision.readPlan
+    ) {
+      let readFailure: string | undefined;
+      try {
+        const readOutput = await executeAndRecordReadPlan(firstResult.decision.readPlan, config);
+        contextBlocks = readOutput.contextBlocks;
+        readResults = readOutput.results;
+      } catch (error) {
+        readFailure = error instanceof Error ? error.message : String(error);
+      }
+
+      const secondInput = createAgentCoreInput({
+        sessionId,
+        userMessageId: userMessage.id,
+        userText: content,
+        locale,
+        listenResult: listenAnalysis.result,
+        recentMessages: history,
+        contextBlocks,
+        pendingToolRuns,
+        config,
+        readAttempted: true,
+        readFailure
+      });
+      finalResult = await decideNextStep(secondInput);
+      agentCoreResults.push(finalResult);
+    }
+
+    const sourceRefs: SpeakSourceRef[] = [
+      { kind: "listen_result", id: listenAnalysis.result.id, label: listenAnalysis.result.primaryIntent },
+      { kind: "user_message", id: userMessage.id, label: "current user message" },
+      { kind: "inference", id: finalResult.decision.id, label: `AgentDecision:${finalResult.decision.type}` },
+      ...contextBlocks.map((block) => ({
+        kind: "context_block" as const,
+        id: block.id,
+        label: block.title
+      }))
+    ];
+    const riskFlags = [
+      ...listenAnalysis.result.riskFlags,
+      ...(finalResult.policyGate.allowed ? [] : ["agent_policy_blocked"]),
+      ...(finalResult.decision.actionProposal ? ["action_proposal_not_executed"] : []),
+      ...finalResult.warnings.map(() => "agent_core_warning")
+    ];
     const spoken = await addSpokenAssistantMessage(
       sessionId,
-      content,
+      finalResult.decision.userVisibleSummary,
       locale,
       {
-        mode: "warn",
-        sourceRefs: [{ kind: "system_status", label: "model provider error" }],
-        riskFlags: ["contains_unverified_claim"],
-        meta: { error: true }
+        plan: finalResult.decision.speakPlan,
+        contentTypes: ["markdown"],
+        sourceRefs,
+        riskFlags,
+        uncertaintyFlags: finalResult.warnings,
+        reason: finalResult.decision.reason,
+        meta: {
+          agentCoreResultId: finalResult.id,
+          agentDecisionId: finalResult.decision.id,
+          agentDecisionType: finalResult.decision.type,
+          agentDecisionSource: finalResult.decision.source,
+          policyGateResultId: finalResult.policyGate.id,
+          capabilityRouteId: finalResult.route.id,
+          capability: finalResult.route.capability,
+          routeMode: finalResult.route.mode,
+          actionProposalId: finalResult.decision.actionProposal?.id || "",
+          memoryDecisionId: finalResult.decision.memoryDecision?.id || "",
+          contextBlockIds: contextBlocks.map((block) => block.id)
+        }
       }
     );
     return {
@@ -452,7 +478,40 @@ export async function processUserMessage(
       listenResult: listenAnalysis.result,
       speakPlan: spoken.speakPlan,
       speakMessage: spoken.speakMessage,
-      speakResult: spoken.speakResult
+      speakResult: spoken.speakResult,
+      agentCoreResult: finalResult,
+      agentCoreResults,
+      contextBlocks,
+      readResults
+    };
+  } catch (error) {
+    await recordAgentCoreFailure(sessionId, error);
+    const errorContent = isZh(locale)
+      ? `Agent Core 错误：${error instanceof Error ? error.message : String(error)}\n\n本轮没有执行修改或命令。你可以重试，或使用 /help 查看显式本地命令。`
+      : `Agent Core error: ${error instanceof Error ? error.message : String(error)}\n\nNo modification or command was executed in this turn. Retry, or use /help for explicit local commands.`;
+    const spoken = await addSpokenAssistantMessage(sessionId, errorContent, locale, {
+      mode: "warn",
+      sourceRefs: [
+        { kind: "listen_result", id: listenAnalysis.result.id, label: listenAnalysis.result.primaryIntent },
+        { kind: "system_status", label: "agent core failure" }
+      ],
+      riskFlags: ["agent_core_failed"],
+      meta: {
+        error: true
+      }
+    });
+    return {
+      userMessage,
+      assistantMessage: spoken.message,
+      toolRuns: [],
+      listenEvent: listenAnalysis.event,
+      listenResult: listenAnalysis.result,
+      speakPlan: spoken.speakPlan,
+      speakMessage: spoken.speakMessage,
+      speakResult: spoken.speakResult,
+      agentCoreResults,
+      contextBlocks,
+      readResults
     };
   }
 }

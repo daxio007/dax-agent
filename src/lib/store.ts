@@ -2,7 +2,10 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { newId, nowIso } from "./ids.js";
 import type {
+  AgentCoreResult,
+  AgentDecision,
   AuditRecord,
+  CapabilityRoute,
   FootPlan,
   FootPreview,
   FootResult,
@@ -14,6 +17,7 @@ import type {
   ListenResult,
   Message,
   MessageRole,
+  PolicyGateResult,
   ReadEvent,
   Session,
   SessionDetail,
@@ -47,6 +51,10 @@ function emptyStore(): Store {
     footPlans: [],
     footPreviews: [],
     footResults: [],
+    agentDecisions: [],
+    policyGateResults: [],
+    capabilityRoutes: [],
+    agentCoreResults: [],
     audit: []
   };
 }
@@ -78,6 +86,20 @@ async function mutate<T>(mutator: (store: Store) => T | Promise<T>): Promise<T> 
     return result;
   });
   return writeQueue as Promise<T>;
+}
+
+/**
+ * 使用方法：在一次 store mutate 内保存具有 id 的 Agent Core 对象时调用。
+ * 作用：同一个 id 再次写入时覆盖旧值，否则追加新值，避免调试 API 重放造成重复对象。
+ * 边界：该 helper 只修改传入数组，不写磁盘、不创建审计记录，也不判断对象是否合法。
+ */
+function upsertById<T extends { id: string }>(items: T[], value: T): void {
+  const index = items.findIndex((item) => item.id === value.id);
+  if (index >= 0) {
+    items[index] = value;
+  } else {
+    items.push(value);
+  }
 }
 
 export async function listSessions(): Promise<SessionSummary[]> {
@@ -127,6 +149,10 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
     store.sessions = store.sessions.filter((session) => session.id !== sessionId);
     store.messages = store.messages.filter((message) => message.sessionId !== sessionId);
     store.toolRuns = store.toolRuns.filter((run) => run.sessionId !== sessionId);
+    store.agentDecisions = store.agentDecisions.filter((decision) => decision.sessionId !== sessionId);
+    store.policyGateResults = store.policyGateResults.filter((result) => result.sessionId !== sessionId);
+    store.capabilityRoutes = store.capabilityRoutes.filter((route) => route.sessionId !== sessionId);
+    store.agentCoreResults = store.agentCoreResults.filter((result) => result.sessionId !== sessionId);
     store.audit.push({
       id: newId("aud"),
       type: "session.deleted",
@@ -762,4 +788,277 @@ export async function listFootPreviews(limit = 100): Promise<FootPreview[]> {
 export async function listFootResults(limit = 100): Promise<FootResult[]> {
   const store = await readStore();
   return store.footResults.slice(-limit).reverse();
+}
+
+/**
+ * 记录一个独立的 AgentDecision。
+ *
+ * 使用方法：
+ * - 调试工具、迁移脚本或未来分步式 Agent Core 可以在只有决策对象时调用。
+ * - 正常的一次完整大脑决策优先调用 recordAgentCoreResult()，它会原子记录决策、策略和路由。
+ *
+ * 作用：
+ * - 保存大脑选择了什么下一步、为什么选择、来源是规则、模型还是 fallback。
+ * - 同时写入 agent.decision.created 审计事件。
+ *
+ * 边界：
+ * - 记录决策不代表对应能力已经执行。
+ * - 该方法不会调用读、说、手、脚或模型。
+ */
+export async function recordAgentDecision(decision: AgentDecision): Promise<AgentDecision> {
+  return mutate((store) => {
+    upsertById(store.agentDecisions, decision);
+    store.audit.push({
+      id: newId("aud"),
+      type: "agent.decision.created",
+      sessionId: decision.sessionId,
+      agentDecisionId: decision.id,
+      agentDecisionType: decision.type,
+      agentDecisionSource: decision.source,
+      createdAt: nowIso()
+    });
+    return decision;
+  });
+}
+
+/**
+ * 读取最近的 AgentDecision。
+ *
+ * 使用方法：
+ * - API、调试页和未来反思流程调用 listAgentDecisions(limit)。
+ * - 默认返回最近 100 条，结果按时间倒序排列。
+ *
+ * 作用：
+ * - 展示大脑最近选择了回答、追问、读取、暂停还是提出行动建议。
+ *
+ * 边界：
+ * - 返回的是决策历史，不等同于能力执行历史。
+ */
+export async function listAgentDecisions(limit = 100): Promise<AgentDecision[]> {
+  const store = await readStore();
+  return store.agentDecisions.slice(-limit).reverse();
+}
+
+/**
+ * 记录一个独立的 PolicyGateResult。
+ *
+ * 使用方法：
+ * - 调试工具或未来分步式策略检查器可以单独调用。
+ * - 正常完整流程优先使用 recordAgentCoreResult()。
+ *
+ * 作用：
+ * - 保存某个决策是否被允许、风险等级、需要的审批和被阻止的能力。
+ * - 同时写入 agent.policy.checked 审计事件。
+ *
+ * 边界：
+ * - Policy Gate 允许 proposal 不代表允许 hand apply 或 foot execute。
+ * - 该方法只记录检查结果，不执行审批或能力调用。
+ */
+export async function recordPolicyGateResult(result: PolicyGateResult): Promise<PolicyGateResult> {
+  return mutate((store) => {
+    upsertById(store.policyGateResults, result);
+    store.audit.push({
+      id: newId("aud"),
+      type: "agent.policy.checked",
+      sessionId: result.sessionId,
+      policyGateResultId: result.id,
+      agentDecisionType: result.decisionType,
+      agentRiskLevel: result.risk,
+      approvalRequired: result.requiredApprovals.length > 0,
+      riskFlags: result.blockedCapabilities,
+      createdAt: nowIso()
+    });
+    return result;
+  });
+}
+
+/**
+ * 读取最近的 Policy Gate 检查结果。
+ *
+ * 使用方法：
+ * - API、审计页和调试页调用 listPolicyGateResults(limit)。
+ * - 默认返回最近 100 条，结果按时间倒序排列。
+ *
+ * 作用：
+ * - 解释某个大脑决策为什么被允许、阻止或要求审批。
+ */
+export async function listPolicyGateResults(limit = 100): Promise<PolicyGateResult[]> {
+  const store = await readStore();
+  return store.policyGateResults.slice(-limit).reverse();
+}
+
+/**
+ * 记录一个独立的能力路由。
+ *
+ * 使用方法：
+ * - 未来分步式调度器在已经有 CapabilityRoute、但尚未组装完整 AgentCoreResult 时调用。
+ * - 正常完整流程优先使用 recordAgentCoreResult()。
+ *
+ * 作用：
+ * - 保存决策最终被路由到 read、speak、hand、foot、memory、skill 或 none。
+ *
+ * 边界：
+ * - route.mode 为 execute 也只表示调度意图；真实能力结果仍由对应 capability 记录。
+ */
+export async function recordCapabilityRoute(route: CapabilityRoute): Promise<CapabilityRoute> {
+  return mutate((store) => {
+    upsertById(store.capabilityRoutes, route);
+    store.audit.push({
+      id: newId("aud"),
+      type: "agent.route.created",
+      sessionId: route.sessionId,
+      agentDecisionId: route.decisionId,
+      capabilityRouteId: route.id,
+      detail: `${route.capability}:${route.mode}`,
+      createdAt: nowIso()
+    });
+    return route;
+  });
+}
+
+/**
+ * 读取最近的 Agent Core 能力路由。
+ *
+ * 使用方法：
+ * - 调试页或未来调度可视化调用 listCapabilityRoutes(limit)。
+ * - 默认返回最近 100 条。
+ *
+ * 作用：
+ * - 展示大脑如何把抽象决策映射到具体能力。
+ */
+export async function listCapabilityRoutes(limit = 100): Promise<CapabilityRoute[]> {
+  const store = await readStore();
+  return store.capabilityRoutes.slice(-limit).reverse();
+}
+
+/**
+ * 原子记录一次完整的 Agent Core 结果。
+ *
+ * 使用方法：
+ * - core.ts 完成 WorkingMemory、AgentDecision、PolicyGate 和 CapabilityRoute 后调用。
+ * - 同一个结果 id 被重放时会覆盖对象，但审计仍会留下本次记录轨迹。
+ *
+ * 作用：
+ * - 在一次写入中保存完整大脑结果及其关联对象。
+ * - 根据模型解析状态写入 model_reasoning completed/failed、decision、policy、route 和 core completed 审计。
+ *
+ * 边界：
+ * - 该方法只记录大脑判断，不执行 route 指向的能力。
+ * - 不保存 AgentCoreInput、模型 API key 或完整未过滤上下文。
+ */
+export async function recordAgentCoreResult(result: AgentCoreResult): Promise<AgentCoreResult> {
+  return mutate((store) => {
+    upsertById(store.agentDecisions, result.decision);
+    upsertById(store.policyGateResults, result.policyGate);
+    upsertById(store.capabilityRoutes, result.route);
+    upsertById(store.agentCoreResults, result);
+
+    if (result.modelReasoning) {
+      store.audit.push({
+        id: newId("aud"),
+        type: result.modelReasoning.parseError
+          ? "agent.core.model_reasoning.failed"
+          : "agent.core.model_reasoning.completed",
+        sessionId: result.sessionId,
+        agentCoreResultId: result.id,
+        agentDecisionId: result.decision.id,
+        agentDecisionSource: result.decision.source,
+        detail: result.modelReasoning.parseError || `${result.modelReasoning.provider}:${result.modelReasoning.model}`,
+        createdAt: nowIso()
+      });
+    }
+
+    store.audit.push(
+      {
+        id: newId("aud"),
+        type: "agent.decision.created",
+        sessionId: result.sessionId,
+        agentCoreResultId: result.id,
+        agentDecisionId: result.decision.id,
+        agentDecisionType: result.decision.type,
+        agentDecisionSource: result.decision.source,
+        createdAt: nowIso()
+      },
+      {
+        id: newId("aud"),
+        type: "agent.policy.checked",
+        sessionId: result.sessionId,
+        agentCoreResultId: result.id,
+        agentDecisionId: result.decision.id,
+        policyGateResultId: result.policyGate.id,
+        agentDecisionType: result.policyGate.decisionType,
+        agentRiskLevel: result.policyGate.risk,
+        approvalRequired: result.policyGate.requiredApprovals.length > 0,
+        riskFlags: result.policyGate.blockedCapabilities,
+        createdAt: nowIso()
+      },
+      {
+        id: newId("aud"),
+        type: "agent.route.created",
+        sessionId: result.sessionId,
+        agentCoreResultId: result.id,
+        agentDecisionId: result.decision.id,
+        capabilityRouteId: result.route.id,
+        detail: `${result.route.capability}:${result.route.mode}`,
+        createdAt: nowIso()
+      },
+      {
+        id: newId("aud"),
+        type: "agent.core.completed",
+        sessionId: result.sessionId,
+        agentCoreResultId: result.id,
+        agentDecisionId: result.decision.id,
+        policyGateResultId: result.policyGate.id,
+        capabilityRouteId: result.route.id,
+        agentDecisionType: result.decision.type,
+        agentDecisionSource: result.decision.source,
+        agentRiskLevel: result.policyGate.risk,
+        createdAt: nowIso()
+      }
+    );
+    return result;
+  });
+}
+
+/**
+ * 记录一次无法收敛为 AgentCoreResult 的大脑异常。
+ *
+ * 使用方法：
+ * - processUserMessage() 或 /api/core/decide 捕获 core.ts 的意外异常后调用。
+ * - detail 应传入已经适合审计的短错误信息。
+ *
+ * 作用：
+ * - 即使大脑在生成结构化结果前失败，也保留 agent.core.failed 轨迹。
+ *
+ * 边界：
+ * - 错误详情最多保存 1000 个字符。
+ * - 该方法不处理异常，也不生成用户回复。
+ */
+export async function recordAgentCoreFailure(sessionId: string, detail: string): Promise<AuditRecord> {
+  return mutate((store) => {
+    const audit: AuditRecord = {
+      id: newId("aud"),
+      type: "agent.core.failed",
+      sessionId,
+      detail: detail.slice(0, 1000),
+      createdAt: nowIso()
+    };
+    store.audit.push(audit);
+    return audit;
+  });
+}
+
+/**
+ * 读取最近的完整 AgentCoreResult。
+ *
+ * 使用方法：
+ * - API、调试页、未来反思和 Episode Store 调用 listAgentCoreResults(limit)。
+ * - 默认返回最近 100 条，结果按时间倒序排列。
+ *
+ * 作用：
+ * - 一次查看工作记忆、决策、策略、路由、模型解析状态和 warnings。
+ */
+export async function listAgentCoreResults(limit = 100): Promise<AgentCoreResult[]> {
+  const store = await readStore();
+  return store.agentCoreResults.slice(-limit).reverse();
 }

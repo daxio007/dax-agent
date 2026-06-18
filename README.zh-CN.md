@@ -64,6 +64,12 @@ Ollama 的 OpenAI-compatible endpoint 示例：
 
 只读工具会在工作区内自动执行。Shell 命令会创建 pending tool run，必须在控制台批准后才会执行。
 
+## Agent Core
+
+自然语言消息现在会经过 `听 -> Agent Core -> 按需读 -> 决策 -> 嘴巴表达`。模型只生成结构化候选决策，代码负责 schema 校验、Policy Gate、能力路由、fallback 和审计。
+
+手和脚目前仍然只接收 ActionProposal。Agent Core 不会自动修改文件或执行命令。
+
 ## 中文界面
 
 Web 控制台现在支持中文和英文界面：
@@ -91,6 +97,8 @@ Web 控制台现在支持中文和英文界面：
 - `docs/design-notes.md`
 - `docs/agent-learning-model.md`
 - `docs/agent-core-design.md`
+- `docs/agent-core-implementation-plan.md`
+- `docs/agent-core-implementation.md`
 - `docs/read-capability-design.md`
 - `docs/listen-capability-design.md`
 - `docs/speak-capability-design.md`
