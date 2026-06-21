@@ -31,6 +31,7 @@
               <option value="zh-CN">中文</option>
               <option value="en-US">English</option>
             </select>
+            <button class="ghost-button" id="exportButton" type="button">导出</button>
             <button class="ghost-button" id="refreshButton" type="button">刷新</button>
             <button class="ghost-button" id="settingsButton" type="button">设置</button>
           </div>
@@ -39,6 +40,13 @@
         <section class="workspace">
           <section class="chat-panel" aria-label="聊天">
             <div class="messages" id="messages"></div>
+            <details class="tool-drawer" id="toolDrawer">
+              <summary>
+                <span id="toolPanelTitle">工具运行</span>
+                <span id="pendingCount">0 个待审批 · 共 0 条</span>
+              </summary>
+              <div class="tool-list" id="toolList"></div>
+            </details>
             <form class="composer" id="composer">
               <textarea
                 id="messageInput"
@@ -49,14 +57,6 @@
               <button class="send-button" id="sendButton" type="submit">发送</button>
             </form>
           </section>
-
-          <aside class="tool-panel" aria-label="工具运行记录">
-            <div class="panel-head">
-              <h2 id="toolPanelTitle">工具运行</h2>
-              <span id="pendingCount">0 个待审批</span>
-            </div>
-            <div class="tool-list" id="toolList"></div>
-          </aside>
         </section>
       </main>
     </div>

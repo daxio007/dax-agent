@@ -8,10 +8,15 @@ type TranslationKey =
   | "checkingGateway"
   | "refresh"
   | "settings"
+  | "exportConversation"
+  | "exportUnavailable"
+  | "exportReady"
   | "chatAria"
   | "toolRunsAria"
   | "messagePlaceholder"
   | "send"
+  | "sending"
+  | "waitingMessage"
   | "toolRuns"
   | "pendingCount"
   | "noSessions"
@@ -82,6 +87,7 @@ interface ChatMessage {
 
 interface MessageMeta {
   actionProposal?: ActionProposal;
+  pending?: boolean;
 }
 
 interface ActionProposal {
@@ -184,6 +190,7 @@ const elements = {
   sessionTitle: qs<HTMLElement>("#sessionTitle"),
   statusLine: qs<HTMLElement>("#statusLine"),
   languageInput: qs<HTMLSelectElement>("#languageInput"),
+  exportButton: qs<HTMLButtonElement>("#exportButton"),
   refreshButton: qs<HTMLButtonElement>("#refreshButton"),
   settingsButton: qs<HTMLButtonElement>("#settingsButton"),
   messages: qs<HTMLElement>("#messages"),
@@ -233,12 +240,17 @@ const messages: Record<Locale, Record<TranslationKey, string>> = {
     checkingGateway: "正在检查网关...",
     refresh: "刷新",
     settings: "设置",
+    exportConversation: "导出",
+    exportUnavailable: "当前没有可导出的会话。",
+    exportReady: "会话记录已导出。",
     chatAria: "聊天",
     toolRunsAria: "工具运行记录",
     messagePlaceholder: "询问 DAX Agent，或试试 /help",
     send: "发送",
+    sending: "发送中...",
+    waitingMessage: "DAX Agent 正在思考...",
     toolRuns: "工具运行",
-    pendingCount: "{count} 个待审批",
+    pendingCount: "{pending} 个待审批 · 共 {total} 条",
     noSessions: "还没有会话。",
     messageCount: "{count} 条消息",
     emptyChat: "可以先输入 /help，或者在设置中配置模型。",
@@ -298,12 +310,17 @@ const messages: Record<Locale, Record<TranslationKey, string>> = {
     checkingGateway: "Checking gateway...",
     refresh: "Refresh",
     settings: "Settings",
+    exportConversation: "Export",
+    exportUnavailable: "There is no active session to export.",
+    exportReady: "Conversation exported.",
     chatAria: "Chat",
     toolRunsAria: "Tool runs",
     messagePlaceholder: "Ask DAX Agent, or try /help",
     send: "Send",
+    sending: "Sending...",
+    waitingMessage: "DAX Agent is thinking...",
     toolRuns: "Tool Runs",
-    pendingCount: "{count} pending",
+    pendingCount: "{pending} pending · {total} total",
     noSessions: "No sessions yet.",
     messageCount: "{count} messages",
     emptyChat: "Start with /help, or configure a model in Settings.",
@@ -503,6 +520,63 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", "&#039;");
 }
 
+function fencedBlock(value: unknown): string {
+  return `~~~text\n${String(value || "").replaceAll("~~~", "~~\\~")}\n~~~`;
+}
+
+function safeFileSegment(value: string): string {
+  return value.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-").slice(0, 80) || "session";
+}
+
+function exportConversation(): void {
+  const session = state.activeSession;
+  if (!session) {
+    alert(t("exportUnavailable"));
+    return;
+  }
+  const lines = [
+    `# ${displayTitle(session.title)}`,
+    "",
+    `- Session ID: ${session.id}`,
+    `- Exported at: ${new Date().toLocaleString(state.locale)}`,
+    "",
+    "## Messages",
+    ""
+  ];
+  for (const message of session.messages) {
+    lines.push(`### ${displayRole(message.role)}`, "", message.content || "", "");
+  }
+  lines.push("## Tool Runs", "");
+  if (!session.toolRuns.length) {
+    lines.push(t("noToolRuns"), "");
+  } else {
+    for (const run of session.toolRuns) {
+      const output = run.output || run.error || "";
+      lines.push(
+        `### ${run.tool} - ${displayStatus(run.status)}`,
+        "",
+        "Input:",
+        fencedBlock(JSON.stringify(run.input, null, 2)),
+        ""
+      );
+      if (output) {
+        lines.push("Output:", fencedBlock(output), "");
+      }
+    }
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+  const link = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "-");
+  const url = URL.createObjectURL(blob);
+  link.href = url;
+  link.download = `dax-${safeFileSegment(displayTitle(session.title))}-${stamp}.md`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  elements.statusLine.textContent = t("exportReady");
+}
+
 /**
  * 使用方法：state.sessions 或活动会话变化后调用。
  * 作用：重建侧边栏会话按钮、数量、时间和选中状态。
@@ -547,7 +621,7 @@ function renderMessages(messages: ChatMessage[]): void {
   for (const message of messages) {
     const proposal = message.meta?.actionProposal;
     const item = document.createElement("article");
-    item.className = `message ${message.role}`;
+    item.className = `message ${message.role}${message.meta?.pending ? " pending" : ""}`;
     item.innerHTML = `
       <div class="message-role">${escapeHtml(displayRole(message.role))}</div>
       <div class="message-content">${escapeHtml(message.content)}</div>
@@ -576,7 +650,7 @@ function renderMessages(messages: ChatMessage[]): void {
  */
 function renderTools(toolRuns: ToolRun[]): void {
   const pending = toolRuns.filter((run) => run.status === "pending").length;
-  elements.pendingCount.textContent = t("pendingCount", { count: pending });
+  elements.pendingCount.textContent = t("pendingCount", { pending, total: toolRuns.length });
   elements.toolList.innerHTML = "";
   if (!toolRuns.length) {
     elements.toolList.innerHTML = `<div class="empty-state">${escapeHtml(t("noToolRuns"))}</div>`;
@@ -912,6 +986,25 @@ async function createNewSession(): Promise<void> {
   elements.messageInput.focus();
 }
 
+function renderSendingState(content: string): void {
+  const currentMessages = state.activeSession?.messages || [];
+  renderMessages([
+    ...currentMessages,
+    {
+      id: `local-user-${Date.now()}`,
+      role: "user",
+      content
+    },
+    {
+      id: `local-waiting-${Date.now()}`,
+      role: "assistant",
+      content: t("waitingMessage"),
+      meta: { pending: true }
+    }
+  ]);
+  elements.statusLine.textContent = t("waitingMessage");
+}
+
 /**
  * 使用方法：聊天 composer 提交时传入 SubmitEvent。
  * 作用：防止重复发送，调用消息 API，并在成功后刷新会话。
@@ -925,7 +1018,9 @@ async function sendMessage(event: SubmitEvent): Promise<void> {
   if (!content || !state.activeSessionId || state.sending) return;
   state.sending = true;
   elements.sendButton.disabled = true;
+  elements.sendButton.textContent = t("sending");
   elements.messageInput.value = "";
+  renderSendingState(content);
   try {
     await api(`/api/sessions/${state.activeSessionId}/messages`, {
       method: "POST",
@@ -935,10 +1030,15 @@ async function sendMessage(event: SubmitEvent): Promise<void> {
     await openSession(state.activeSessionId);
   } catch (error) {
     elements.messageInput.value = content;
+    if (state.activeSession) renderMessages(state.activeSession.messages);
     alert(error instanceof Error ? error.message : String(error));
   } finally {
     state.sending = false;
     elements.sendButton.disabled = false;
+    elements.sendButton.textContent = t("send");
+    if (state.config) {
+      elements.statusLine.textContent = `${state.config.model.provider} ${t("statusSeparator")} ${state.config.model.model}`;
+    }
     elements.messageInput.focus();
   }
 }
@@ -952,6 +1052,7 @@ function applyLocale(): void {
   document.documentElement.lang = state.locale;
   elements.brandSubtitle.textContent = t("brandSubtitle");
   elements.newSessionButton.textContent = t("newSession");
+  elements.exportButton.textContent = t("exportConversation");
   elements.refreshButton.textContent = t("refresh");
   elements.settingsButton.textContent = t("settings");
   elements.messageInput.placeholder = t("messagePlaceholder");
@@ -1000,7 +1101,10 @@ async function handleToolClick(event: MouseEvent): Promise<void> {
   if (!action || !id) return;
   button.disabled = true;
   try {
-    await api(`/api/tool-runs/${id}/${action}`, { method: "POST" });
+    await api(`/api/tool-runs/${id}/${action}`, {
+      method: "POST",
+      body: JSON.stringify({ locale: state.locale })
+    });
     if (state.activeSessionId) await openSession(state.activeSessionId);
   } catch (error) {
     alert(error instanceof Error ? error.message : String(error));
@@ -1075,6 +1179,7 @@ async function testSettings(): Promise<void> {
 }
 
 elements.newSessionButton.addEventListener("click", createNewSession);
+elements.exportButton.addEventListener("click", exportConversation);
 elements.refreshButton.addEventListener("click", refreshActive);
 elements.composer.addEventListener("submit", sendMessage);
 elements.toolList.addEventListener("click", handleToolClick);

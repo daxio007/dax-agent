@@ -21,9 +21,14 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
 }
@@ -42,7 +47,9 @@ button {
 .app-shell {
   display: grid;
   grid-template-columns: 288px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -52,6 +59,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .brand {
@@ -103,6 +112,8 @@ button {
 }
 
 .session-list {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -143,11 +154,14 @@ button {
 
 .main {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
+  flex: 0 0 auto;
   min-height: 82px;
   border-bottom: 1px solid var(--line);
   background: rgba(255, 253, 248, 0.92);
@@ -210,7 +224,8 @@ button {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .chat-panel {
@@ -218,10 +233,12 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .messages {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   padding: 24px;
   display: flex;
@@ -242,6 +259,15 @@ button {
   margin-left: auto;
   background: var(--accent-soft);
   border-color: #b4d9d0;
+}
+
+.message.pending {
+  border-color: #cdbf9f;
+  background: #fffaf0;
+}
+
+.message.pending .message-content {
+  color: var(--muted);
 }
 
 .message-role {
@@ -276,6 +302,7 @@ button {
 }
 
 .composer {
+  flex: 0 0 auto;
   border-top: 1px solid var(--line);
   background: var(--panel-strong);
   display: grid;
@@ -288,7 +315,7 @@ button {
   width: 100%;
   min-height: 62px;
   max-height: 180px;
-  resize: vertical;
+  resize: none;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
@@ -309,40 +336,52 @@ button {
   height: 44px;
 }
 
-.tool-panel {
-  min-width: 0;
-  min-height: 0;
-  border-left: 1px solid var(--line);
-  background: #f0ede5;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.send-button:disabled {
+  cursor: wait;
+  opacity: 0.78;
 }
 
-.panel-head {
+.tool-drawer {
+  flex: 0 0 auto;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  background: #f0ede5;
+  overflow: hidden;
+}
+
+.tool-drawer summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-height: 48px;
+  padding: 0 24px;
+  cursor: pointer;
+  user-select: none;
 }
 
-.panel-head h2 {
-  margin: 0;
+.tool-drawer summary span:first-child {
   font-size: 16px;
+  font-weight: 800;
 }
 
-.panel-head span {
+.tool-drawer summary span:last-child {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
 }
 
 .tool-list {
+  max-height: min(280px, 32vh);
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 0 24px 16px;
+}
+
+.tool-drawer:not([open]) .tool-list {
+  display: none;
 }
 
 .tool-run {
@@ -569,11 +608,13 @@ button {
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--line);
+    max-height: 172px;
   }
 
   .session-list {
@@ -587,17 +628,13 @@ button {
   .workspace {
     grid-template-columns: 1fr;
   }
-
-  .tool-panel {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-    max-height: 360px;
-  }
 }
 
 @media (max-width: 640px) {
   .topbar,
-  .composer {
+  .composer,
+  .tool-drawer summary,
+  .tool-list {
     padding-inline: 16px;
   }
 

@@ -32,7 +32,7 @@ import {
   listToolRuns,
   updateToolRun
 } from "./lib/store.js";
-import { processUserMessage } from "./lib/agent.js";
+import { addToolRunReportMessage, processUserMessage } from "./lib/agent.js";
 import { completeChat } from "./lib/providers.js";
 import {
   createAgentCoreInput,
@@ -1154,7 +1154,16 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
         { status: "approved", approvedAt: new Date().toISOString() },
         "tool.approved"
       );
-      sendJson(res, 200, await executeToolRun(run.id));
+      const completed = await executeToolRun(run.id);
+      await addToolRunReportMessage(sessionId, completed || run, String(body.locale || "zh-CN"), {
+        source: "action-proposal-execute",
+        sourceRefs: [{ kind: "inference", id: proposalId, label: optionalString(body.title) || proposalId }],
+        meta: {
+          actionProposalId: proposalId,
+          actionProposalTitle: optionalString(body.title) || proposalId
+        }
+      });
+      sendJson(res, 200, completed);
       return;
     }
 
@@ -1406,6 +1415,7 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
       return;
     }
     if (method === "POST" && parts[3] === "approve") {
+      const body = await readBody(req);
       const approved = await updateToolRun(
         runId,
         { status: "approved", approvedAt: new Date().toISOString() },
@@ -1415,11 +1425,18 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
         sendJson(res, 404, { error: "Tool run not found." });
         return;
       }
-      sendJson(res, 200, await executeToolRun(runId));
+      const completed = await executeToolRun(runId);
+      if (completed) {
+        await addToolRunReportMessage(completed.sessionId, completed, String(body.locale || "zh-CN"), {
+          source: "tool-run-approval"
+        });
+      }
+      sendJson(res, 200, completed);
       return;
     }
 
     if (method === "POST" && parts[3] === "reject") {
+      await readBody(req);
       const rejected = await updateToolRun(
         runId,
         { status: "rejected", completedAt: new Date().toISOString() },

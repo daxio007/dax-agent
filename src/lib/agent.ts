@@ -99,6 +99,75 @@ function isZh(locale: Locale): boolean {
   return String(locale || "").toLowerCase().startsWith("zh");
 }
 
+interface ToolRunUserReport {
+  content: string;
+  succeeded: boolean;
+  partial: boolean;
+  riskFlags: string[];
+}
+
+function toolRunOutputText(run: ToolRun | null): string {
+  if (!run) return "";
+  return String(run.output || run.error || "").trim();
+}
+
+function truncateToolOutput(text: string, maxChars = 8000): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[output truncated: ${text.length - maxChars} chars omitted]`;
+}
+
+function hasUsefulPartialOutput(run: ToolRun | null, text: string): boolean {
+  if (!run || run.status === "completed") return false;
+  if (String(run.output || "").trim()) return true;
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.some((line) => /\b(FullName|SizeMB|Length|LastWriteTime|Directory|Name|Mode)\b/i.test(line)) ||
+    lines.some((line) => /^[-\s]{4,}$/.test(line));
+}
+
+function spokenStatusForToolRun(run: ToolRun | null): "executed" | "partial" | "failed" {
+  if (run?.status === "completed") return "executed";
+  return hasUsefulPartialOutput(run, toolRunOutputText(run)) ? "partial" : "failed";
+}
+
+export function formatToolRunForUser(run: ToolRun | null, locale: Locale = "zh-CN"): ToolRunUserReport {
+  const zh = isZh(locale);
+  if (!run) {
+    return {
+      content: zh ? "工具运行记录没有找到，无法展示执行结果。" : "The tool run was not found, so I cannot show a result.",
+      succeeded: false,
+      partial: false,
+      riskFlags: ["tool_run_missing"]
+    };
+  }
+  const output = truncateToolOutput(toolRunOutputText(run));
+  const succeeded = run.status === "completed";
+  const partial = hasUsefulPartialOutput(run, output);
+  const command = typeof run.input?.command === "string" ? String(run.input.command) : run.tool;
+  const header = zh
+    ? succeeded
+      ? `已执行 ${run.tool}。`
+      : partial
+        ? `${run.tool} 返回了非零退出码，但已经拿到部分可用结果。`
+        : `${run.tool} 执行未成功。`
+    : succeeded
+      ? `Ran ${run.tool}.`
+      : partial
+        ? `${run.tool} returned a non-zero exit code, but it produced partial usable output.`
+        : `${run.tool} did not complete successfully.`;
+  const note = partial
+    ? zh
+      ? "\n\n部分路径可能因为权限或系统保护无法读取，所以下面结果只代表可访问范围。"
+      : "\n\nSome paths may be unreadable because of permissions or system protection, so this only represents accessible results."
+    : "";
+  const body = output || (zh ? "没有可展示的输出。" : "No output was returned.");
+  return {
+    content: `${header}\n\n${zh ? "命令" : "Command"}: \`${command}\`\n\n${body}${note}`,
+    succeeded,
+    partial,
+    riskFlags: succeeded ? [] : partial ? ["tool_run_partial_output"] : ["tool_run_failed"]
+  };
+}
+
 /**
  * 通过“嘴巴”能力创建 assistant 消息并写入会话。
  *
@@ -273,6 +342,36 @@ function commandFromActionProposal(proposal: ActionProposal): {
     cwd: action.cwd || ".",
     timeoutMs: action.timeoutMs
   };
+}
+
+export async function addToolRunReportMessage(
+  sessionId: string,
+  run: ToolRun | null,
+  locale: Locale,
+  options: {
+    source?: string;
+    sourceRefs?: SpeakSourceRef[];
+    meta?: JsonObject;
+  } = {}
+): Promise<AssistantMessageWithSpeak & { report: ToolRunUserReport }> {
+  const report = formatToolRunForUser(run, locale);
+  const spoken = await addSpokenAssistantMessage(sessionId, report.content, locale, {
+    mode: report.succeeded || report.partial ? "report" : "warn",
+    contentTypes: ["markdown"],
+    sourceRefs: [
+      ...(options.sourceRefs || []),
+      { kind: "tool_result", id: run?.id || "", label: run?.tool || "tool run" }
+    ],
+    riskFlags: report.riskFlags,
+    meta: {
+      ...(options.meta || {}),
+      source: options.source || "tool-run-report",
+      toolRunId: run?.id || "",
+      toolRunStatus: run?.status || "missing",
+      toolRunPartialOutput: report.partial
+    }
+  });
+  return { ...spoken, report };
 }
 
 /**
@@ -486,30 +585,14 @@ async function handleActionProposalReply(
     "tool.approved"
   );
   const completed = await executeToolRun(run.id);
-  const output = completed?.output || completed?.error || "";
-  const succeeded = completed?.status === "completed";
-  const spoken = await addSpokenAssistantMessage(
-    sessionId,
-    isZh(locale)
-      ? `${succeeded ? "已按你的确认执行建议命令。" : "已按你的确认尝试执行建议命令，但执行未成功。"}\n\n${output}`
-      : `${succeeded ? "I executed the proposed command after your confirmation." : "I tried to execute the proposed command after your confirmation, but it did not succeed."}\n\n${output}`,
-    locale,
-    {
-      mode: succeeded ? "report" : "warn",
-      contentTypes: ["markdown"],
-      sourceRefs: [
-        { kind: "inference", id: latest.proposal.id, label: latest.proposal.title },
-        { kind: "tool_result", id: completed?.id || run.id, label: "shell.run" }
-      ],
-      riskFlags: succeeded ? [] : ["tool_run_failed"],
-      meta: {
-        source: "action-proposal-reply",
-        actionProposalId: latest.proposal.id,
-        actionProposalStatus: succeeded ? "executed" : "failed",
-        toolRunId: completed?.id || run.id
-      }
+  const spoken = await addToolRunReportMessage(sessionId, completed || run, locale, {
+    source: "action-proposal-reply",
+    sourceRefs: [{ kind: "inference", id: latest.proposal.id, label: latest.proposal.title }],
+    meta: {
+      actionProposalId: latest.proposal.id,
+      actionProposalStatus: spokenStatusForToolRun(completed || run)
     }
-  );
+  });
   return { ...spoken, toolRuns: [completed || run] };
 }
 
