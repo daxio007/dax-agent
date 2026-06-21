@@ -32,6 +32,7 @@ import {
   updateToolRun
 } from "./lib/store.js";
 import { processUserMessage } from "./lib/agent.js";
+import { completeChat } from "./lib/providers.js";
 import {
   createAgentCoreInput,
   decideNextStep,
@@ -194,6 +195,81 @@ function optionalString(value: unknown): string | undefined {
 function optionalPositiveNumber(value: unknown): number | undefined {
   const numberValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numberValue) && numberValue > 0 ? Math.floor(numberValue) : undefined;
+}
+
+/**
+ * 将设置 API 传入的 Provider 收敛为当前运行时支持的值。
+ *
+ * 使用方法：
+ * - PUT /api/config 保存设置前调用。
+ * - 未传值时使用当前 Provider，传入未知值时返回 400。
+ *
+ * 作用：
+ * - 避免把拼写错误或前端未知选项写入 config/local.json。
+ *
+ * 边界：
+ * - 当前只支持 echo、openai 和 ollama。
+ */
+function coerceModelProvider(value: unknown, fallback: string): string {
+  const provider = optionalString(value) || fallback;
+  if (!["echo", "openai", "ollama"].includes(provider)) {
+    throw createHttpError("Provider must be echo, openai, or ollama.");
+  }
+  return provider;
+}
+
+/**
+ * 校验保存后真正会生效的模型配置。
+ *
+ * 使用方法：
+ * - PUT /api/config 在写入本地配置前调用。
+ * - 测试连接 API 在发出模型请求前也调用。
+ *
+ * 作用：
+ * - 阻止“选择真实 Provider，但 Base URL、模型名或 API key 缺失”的无效设置。
+ * - 提前给设置面板返回可理解的 400 错误，而不是等到聊天时才报模型错误。
+ *
+ * 边界：
+ * - echo 不需要外部配置。
+ * - Ollama 允许空 API key；当前 openai Provider 与 providers.ts 保持一致，要求 API key。
+ */
+function validateModelConfig(config: AppConfig): void {
+  if (config.model.provider === "echo") return;
+  if (!config.model.baseUrl.trim()) {
+    throw createHttpError("Base URL is required for a non-echo provider.");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(config.model.baseUrl);
+  } catch {
+    throw createHttpError("Base URL must be a valid URL.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw createHttpError("Base URL must use http:// or https://.");
+  }
+  if (!config.model.model.trim()) {
+    throw createHttpError("Model name is required for a non-echo provider.");
+  }
+  if (config.model.provider === "openai" && !config.model.apiKey) {
+    throw createHttpError("API key is required for the OpenAI-compatible provider.");
+  }
+}
+
+/**
+ * 判断设置 API 收到的 API key 是否只是 GET /api/config 返回的脱敏展示值。
+ *
+ * 使用方法：
+ * - PUT /api/config 处理 apiKey 字段前调用。
+ *
+ * 作用：
+ * - 防止 API 客户端把 `sk-a...b0b7` 或星号掩码误当成新密钥写回本地配置。
+ *
+ * 边界：
+ * - 空字符串由“留空保留当前密钥”规则处理。
+ * - 真正的新密钥只有在不是掩码时才会覆盖旧值。
+ */
+function isMaskedApiKey(value: string): boolean {
+  return value.includes("*") || /^.{4}\.\.\..{4}$/.test(value);
 }
 
 /**
@@ -837,16 +913,64 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
     return;
   }
 
+  if (method === "POST" && url.pathname === "/api/config/test") {
+    const config = await loadConfig();
+    validateModelConfig(config);
+    const startedAt = Date.now();
+    if (config.model.provider === "echo") {
+      sendJson(res, 200, {
+        ok: true,
+        provider: "echo",
+        model: "local-echo",
+        latencyMs: Date.now() - startedAt,
+        message: "Echo provider is available locally; no external model was contacted."
+      });
+      return;
+    }
+    const completion = await completeChat(
+      config,
+      [
+        {
+          role: "system",
+          content: "This is a connection test. Reply with a short confirmation and do not request tools."
+        },
+        {
+          role: "user",
+          content: "Confirm that the model endpoint is reachable."
+        }
+      ],
+      "en-US"
+    );
+    sendJson(res, 200, {
+      ok: true,
+      provider: completion.provider,
+      model: completion.model,
+      latencyMs: Date.now() - startedAt,
+      message: completion.content.slice(0, 500)
+    });
+    return;
+  }
+
   if (method === "PUT" && url.pathname === "/api/config") {
     const body = await readBody(req);
+    const current = await loadConfig();
+    const provider = coerceModelProvider(body.provider, current.model.provider);
+    const apiKeyInput = body.apiKey === undefined ? "" : String(body.apiKey);
+    const hasNewApiKey = Boolean(apiKeyInput) && !isMaskedApiKey(apiKeyInput);
+    const nextConfig: AppConfig = structuredClone(current);
+    nextConfig.model.provider = provider;
+    if (body.baseUrl !== undefined) nextConfig.model.baseUrl = String(body.baseUrl).trim();
+    if (body.model !== undefined) nextConfig.model.model = String(body.model).trim();
+    if (body.temperature !== undefined) nextConfig.model.temperature = Number(body.temperature);
+    if (hasNewApiKey) nextConfig.model.apiKey = apiKeyInput;
+    validateModelConfig(nextConfig);
+
     const patch: DeepPartial<AppConfig> = { model: {}, security: {} };
-    if (body.provider) patch.model!.provider = String(body.provider);
-    if (body.baseUrl !== undefined) patch.model!.baseUrl = String(body.baseUrl);
-    if (body.model) patch.model!.model = String(body.model);
-    if (body.temperature !== undefined) patch.model!.temperature = Number(body.temperature);
-    if (body.apiKey !== undefined && body.apiKey !== "" && !String(body.apiKey).includes("*")) {
-      patch.model!.apiKey = String(body.apiKey);
-    }
+    patch.model!.provider = nextConfig.model.provider;
+    patch.model!.baseUrl = nextConfig.model.baseUrl;
+    patch.model!.model = nextConfig.model.model;
+    patch.model!.temperature = nextConfig.model.temperature;
+    if (hasNewApiKey) patch.model!.apiKey = apiKeyInput;
     if (body.autoRunReadTools !== undefined) {
       patch.security!.autoRunReadTools = Boolean(body.autoRunReadTools);
     }

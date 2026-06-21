@@ -74,6 +74,7 @@
             <option value="openai">OpenAI compatible</option>
             <option value="ollama">Ollama compatible</option>
           </select>
+          <small class="field-help" id="providerHint"></small>
         </label>
         <label>
           <span id="baseUrlLabel">Base URL</span>
@@ -85,14 +86,23 @@
         </label>
         <label>
           <span id="apiKeyLabel">API key</span>
-          <input id="apiKeyInput" type="password" placeholder="留空则保留当前密钥" />
+          <input
+            id="apiKeyInput"
+            type="password"
+            placeholder="留空则保留当前密钥"
+            autocomplete="new-password"
+            spellcheck="false"
+          />
+          <small class="field-help" id="apiKeyStatus"></small>
         </label>
         <label class="checkbox-row">
           <input id="autoRunReadToolsInput" type="checkbox" />
           <span id="autoRunReadToolsLabel">自动运行只读工具</span>
         </label>
+        <div class="settings-feedback" id="settingsFeedback" role="status" aria-live="polite"></div>
         <div class="dialog-actions">
           <button class="ghost-button" type="button" id="cancelSettingsButton">取消</button>
+          <button class="ghost-button" type="button" id="testSettingsButton">测试连接</button>
           <button class="primary-action compact" id="saveSettingsButton" type="submit">保存设置</button>
         </div>
       </form>

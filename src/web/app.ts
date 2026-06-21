@@ -25,9 +25,25 @@ type TranslationKey =
   | "model"
   | "apiKey"
   | "apiKeyPlaceholder"
+  | "apiKeyStored"
+  | "apiKeyMissing"
+  | "apiKeyWillReplace"
+  | "providerHintEcho"
+  | "providerHintOpenAI"
+  | "providerHintOllama"
   | "autoRunReadTools"
   | "cancel"
+  | "testConnection"
+  | "testingConnection"
   | "saveSettings"
+  | "savingSettings"
+  | "settingsSaved"
+  | "connectionSuccess"
+  | "echoNotExternal"
+  | "baseUrlRequired"
+  | "baseUrlInvalid"
+  | "modelRequired"
+  | "apiKeyRequired"
   | "close"
   | "languageLabel"
   | "newSessionTitle"
@@ -74,6 +90,8 @@ interface AppConfig {
     provider: string;
     baseUrl: string;
     model: string;
+    apiKey?: string;
+    hasApiKey?: boolean;
   };
   security?: {
     autoRunReadTools?: boolean;
@@ -86,6 +104,14 @@ interface AppState {
   config: AppConfig | null;
   sending: boolean;
   locale: Locale;
+}
+
+interface ConfigTestResult {
+  ok: boolean;
+  provider: string;
+  model: string;
+  latencyMs: number;
+  message: string;
 }
 
 function initialLocale(): Locale {
@@ -130,6 +156,9 @@ const elements = {
   baseUrlInput: qs<HTMLInputElement>("#baseUrlInput"),
   modelInput: qs<HTMLInputElement>("#modelInput"),
   apiKeyInput: qs<HTMLInputElement>("#apiKeyInput"),
+  apiKeyStatus: qs<HTMLElement>("#apiKeyStatus"),
+  providerHint: qs<HTMLElement>("#providerHint"),
+  settingsFeedback: qs<HTMLElement>("#settingsFeedback"),
   providerLabel: qs<HTMLElement>("#providerLabel"),
   baseUrlLabel: qs<HTMLElement>("#baseUrlLabel"),
   modelLabel: qs<HTMLElement>("#modelLabel"),
@@ -137,6 +166,7 @@ const elements = {
   autoRunReadToolsInput: qs<HTMLInputElement>("#autoRunReadToolsInput"),
   autoRunReadToolsLabel: qs<HTMLElement>("#autoRunReadToolsLabel"),
   saveSettingsButton: qs<HTMLButtonElement>("#saveSettingsButton"),
+  testSettingsButton: qs<HTMLButtonElement>("#testSettingsButton"),
   settingsTitle: qs<HTMLElement>("#settingsTitle")
 };
 
@@ -165,9 +195,25 @@ const messages: Record<Locale, Record<TranslationKey, string>> = {
     model: "Model",
     apiKey: "API key",
     apiKeyPlaceholder: "留空则保留当前密钥",
+    apiKeyStored: "已保存：{masked}。留空会继续使用该密钥。",
+    apiKeyMissing: "尚未保存 API key。",
+    apiKeyWillReplace: "保存后会替换当前 API key。",
+    providerHintEcho: "Echo 是本地演示模式，不会调用 Base URL、模型或 API key。",
+    providerHintOpenAI: "适用于 OpenAI、DeepSeek 和其他 OpenAI-compatible 接口。",
+    providerHintOllama: "适用于本机 Ollama 的 OpenAI-compatible 接口，通常不需要 API key。",
     autoRunReadTools: "自动运行只读工具",
     cancel: "取消",
+    testConnection: "测试连接",
+    testingConnection: "正在测试...",
     saveSettings: "保存设置",
+    savingSettings: "正在保存...",
+    settingsSaved: "设置已保存。当前 Provider：{provider}。",
+    connectionSuccess: "连接成功：{provider} · {model}（{latency} ms）。",
+    echoNotExternal: "Echo 模式只会返回本地演示内容，不会测试外部模型。",
+    baseUrlRequired: "请选择真实模型 Provider 并填写 Base URL。",
+    baseUrlInvalid: "Base URL 必须是有效的 http:// 或 https:// 地址。",
+    modelRequired: "请填写模型名称。",
+    apiKeyRequired: "OpenAI-compatible Provider 需要 API key；已有密钥可以留空保留。",
     close: "关闭",
     languageLabel: "界面语言",
     newSessionTitle: "新会话",
@@ -206,9 +252,25 @@ const messages: Record<Locale, Record<TranslationKey, string>> = {
     model: "Model",
     apiKey: "API key",
     apiKeyPlaceholder: "Leave blank to keep current key",
+    apiKeyStored: "Saved: {masked}. Leave this field blank to keep using it.",
+    apiKeyMissing: "No API key is saved.",
+    apiKeyWillReplace: "Saving will replace the current API key.",
+    providerHintEcho: "Echo is a local demo mode and does not call the Base URL, model, or API key.",
+    providerHintOpenAI: "Use for OpenAI, DeepSeek, and other OpenAI-compatible endpoints.",
+    providerHintOllama: "Use for a local Ollama OpenAI-compatible endpoint; an API key is usually unnecessary.",
     autoRunReadTools: "Auto-run read-only tools",
     cancel: "Cancel",
+    testConnection: "Test connection",
+    testingConnection: "Testing...",
     saveSettings: "Save settings",
+    savingSettings: "Saving...",
+    settingsSaved: "Settings saved. Active provider: {provider}.",
+    connectionSuccess: "Connection succeeded: {provider} · {model} ({latency} ms).",
+    echoNotExternal: "Echo mode only returns local demo content and does not test an external model.",
+    baseUrlRequired: "Select a real model provider and enter a Base URL.",
+    baseUrlInvalid: "Base URL must be a valid http:// or https:// address.",
+    modelRequired: "Enter a model name.",
+    apiKeyRequired: "The OpenAI-compatible provider requires an API key; leave it blank to retain an existing key.",
     close: "Close",
     languageLabel: "Interface language",
     newSessionTitle: "New session",
@@ -374,12 +436,98 @@ function applyConfigToForm(): void {
   elements.modelInput.value = state.config.model.model || "";
   elements.apiKeyInput.value = "";
   elements.autoRunReadToolsInput.checked = Boolean(state.config.security?.autoRunReadTools);
+  updateProviderFields();
+  updateApiKeyStatus();
 }
 
 async function loadConfig(): Promise<void> {
   state.config = await api<AppConfig>("/api/config");
   elements.statusLine.textContent = `${state.config.model.provider} ${t("statusSeparator")} ${state.config.model.model}`;
   applyConfigToForm();
+}
+
+function setSettingsFeedback(message = "", kind: "neutral" | "success" | "error" = "neutral"): void {
+  elements.settingsFeedback.textContent = message;
+  elements.settingsFeedback.className = `settings-feedback ${kind === "neutral" ? "" : kind}`.trim();
+}
+
+function updateProviderFields(): void {
+  const provider = elements.providerInput.value;
+  const isEcho = provider === "echo";
+  elements.baseUrlInput.disabled = isEcho;
+  elements.modelInput.disabled = isEcho;
+  elements.apiKeyInput.disabled = isEcho;
+  elements.testSettingsButton.disabled = isEcho;
+  elements.providerHint.textContent =
+    provider === "openai"
+      ? t("providerHintOpenAI")
+      : provider === "ollama"
+        ? t("providerHintOllama")
+        : t("providerHintEcho");
+  if (isEcho) {
+    setSettingsFeedback(t("echoNotExternal"));
+  } else if (
+    !elements.settingsFeedback.classList.contains("success") &&
+    !elements.settingsFeedback.classList.contains("error")
+  ) {
+    setSettingsFeedback();
+  }
+  updateApiKeyStatus();
+}
+
+function updateApiKeyStatus(): void {
+  if (elements.apiKeyInput.value) {
+    elements.apiKeyStatus.textContent = t("apiKeyWillReplace");
+    return;
+  }
+  if (state.config?.model.hasApiKey) {
+    elements.apiKeyStatus.textContent = t("apiKeyStored", {
+      masked: state.config.model.apiKey || "********"
+    });
+    return;
+  }
+  elements.apiKeyStatus.textContent = t("apiKeyMissing");
+}
+
+function settingsPayload(): Record<string, unknown> {
+  return {
+    provider: elements.providerInput.value,
+    baseUrl: elements.baseUrlInput.value.trim(),
+    model: elements.modelInput.value.trim(),
+    apiKey: elements.apiKeyInput.value,
+    autoRunReadTools: elements.autoRunReadToolsInput.checked
+  };
+}
+
+function validateSettings(): void {
+  const provider = elements.providerInput.value;
+  if (provider === "echo") return;
+  const baseUrl = elements.baseUrlInput.value.trim();
+  if (!baseUrl) throw new Error(t("baseUrlRequired"));
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(t("baseUrlInvalid"));
+    }
+  } catch {
+    throw new Error(t("baseUrlInvalid"));
+  }
+  if (!elements.modelInput.value.trim()) throw new Error(t("modelRequired"));
+  if (provider === "openai" && !elements.apiKeyInput.value && !state.config?.model.hasApiKey) {
+    throw new Error(t("apiKeyRequired"));
+  }
+}
+
+async function persistSettings(): Promise<AppConfig> {
+  validateSettings();
+  const saved = await api<AppConfig>("/api/config", {
+    method: "PUT",
+    body: JSON.stringify(settingsPayload())
+  });
+  state.config = saved;
+  elements.statusLine.textContent = `${saved.model.provider} ${t("statusSeparator")} ${saved.model.model}`;
+  applyConfigToForm();
+  return saved;
 }
 
 async function loadSessions(): Promise<void> {
@@ -464,11 +612,14 @@ function applyLocale(): void {
   elements.apiKeyInput.placeholder = t("apiKeyPlaceholder");
   elements.autoRunReadToolsLabel.textContent = t("autoRunReadTools");
   elements.cancelSettingsButton.textContent = t("cancel");
+  elements.testSettingsButton.textContent = t("testConnection");
   elements.saveSettingsButton.textContent = t("saveSettings");
   elements.settingsTitle.textContent = t("settings");
   elements.closeSettingsButton.setAttribute("aria-label", t("close"));
   elements.languageInput.setAttribute("aria-label", t("languageLabel"));
   elements.languageInput.value = state.locale;
+  updateProviderFields();
+  updateApiKeyStatus();
   if (!state.config) {
     elements.statusLine.textContent = t("checkingGateway");
   }
@@ -493,18 +644,48 @@ async function handleToolClick(event: MouseEvent): Promise<void> {
 
 async function saveSettings(event: SubmitEvent): Promise<void> {
   event.preventDefault();
-  await api("/api/config", {
-    method: "PUT",
-    body: JSON.stringify({
-      provider: elements.providerInput.value,
-      baseUrl: elements.baseUrlInput.value,
-      model: elements.modelInput.value,
-      apiKey: elements.apiKeyInput.value,
-      autoRunReadTools: elements.autoRunReadToolsInput.checked
-    })
-  });
-  elements.settingsDialog.close();
-  await loadConfig();
+  elements.saveSettingsButton.disabled = true;
+  elements.testSettingsButton.disabled = true;
+  elements.saveSettingsButton.textContent = t("savingSettings");
+  setSettingsFeedback();
+  try {
+    const saved = await persistSettings();
+    setSettingsFeedback(t("settingsSaved", { provider: saved.model.provider }), "success");
+  } catch (error) {
+    setSettingsFeedback(error instanceof Error ? error.message : String(error), "error");
+  } finally {
+    elements.saveSettingsButton.disabled = false;
+    elements.saveSettingsButton.textContent = t("saveSettings");
+    updateProviderFields();
+  }
+}
+
+async function testSettings(): Promise<void> {
+  elements.saveSettingsButton.disabled = true;
+  elements.testSettingsButton.disabled = true;
+  elements.testSettingsButton.textContent = t("testingConnection");
+  setSettingsFeedback();
+  try {
+    await persistSettings();
+    const result = await api<ConfigTestResult>("/api/config/test", {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    setSettingsFeedback(
+      t("connectionSuccess", {
+        provider: result.provider,
+        model: result.model,
+        latency: result.latencyMs
+      }),
+      "success"
+    );
+  } catch (error) {
+    setSettingsFeedback(error instanceof Error ? error.message : String(error), "error");
+  } finally {
+    elements.saveSettingsButton.disabled = false;
+    elements.testSettingsButton.textContent = t("testConnection");
+    updateProviderFields();
+  }
 }
 
 elements.newSessionButton.addEventListener("click", createNewSession);
@@ -513,11 +694,15 @@ elements.composer.addEventListener("submit", sendMessage);
 elements.toolList.addEventListener("click", handleToolClick);
 elements.settingsButton.addEventListener("click", () => {
   applyConfigToForm();
+  setSettingsFeedback(elements.providerInput.value === "echo" ? t("echoNotExternal") : "");
   elements.settingsDialog.showModal();
 });
 elements.closeSettingsButton.addEventListener("click", () => elements.settingsDialog.close());
 elements.cancelSettingsButton.addEventListener("click", () => elements.settingsDialog.close());
 elements.settingsForm.addEventListener("submit", saveSettings);
+elements.testSettingsButton.addEventListener("click", testSettings);
+elements.providerInput.addEventListener("change", updateProviderFields);
+elements.apiKeyInput.addEventListener("input", updateApiKeyStatus);
 elements.languageInput.addEventListener("change", async () => {
   state.locale = elements.languageInput.value === "en-US" ? "en-US" : "zh-CN";
   localStorage.setItem("dax.locale", state.locale);

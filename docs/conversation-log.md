@@ -132,3 +132,7 @@
 - Agent Core 第一阶段只允许 hand/foot proposal，不会自动 apply 或 execute，也不会在没有真实结果时声称已经修改或执行。
 - Codex 通过服务端和 Web typecheck、build、核心函数冒烟、真实 `processUserMessage()` 和 HTTP API 验证第一阶段运行时。
 - Codex 新增 `docs/agent-core-implementation.md` 记录代码入口、方法、API、审计、验证结果和当前边界。
+- 用户测试应用时发现模型设置难以确认：API key 保存后输入框为空，配置看起来没有生效。
+- Codex 复现后确认密钥已经保存在本地，但旧界面没有展示“已有密钥”；同时 Provider 仍是 Echo，所以不会调用真实模型。
+- Codex 将当前 Provider 切换为 OpenAI-compatible，并修复设置面板：显示脱敏密钥状态、解释 Provider 行为、校验配置、显示保存反馈并增加连接测试。
+- Codex 通过浏览器验证密钥留空保存仍会保留、Echo 字段会禁用、配置状态清晰；真实模型连接测试成功，浏览器控制台无错误。

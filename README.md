@@ -50,6 +50,14 @@ For Ollama with an OpenAI-compatible endpoint:
 }
 ```
 
+### Settings notes
+
+- `Echo` is a local demo provider and never calls the Base URL, model, or API key.
+- Select `OpenAI compatible` for OpenAI, DeepSeek, and similar endpoints.
+- A saved API key is never displayed again in plaintext. The password field stays empty while a masked saved-key status is shown below it.
+- Leaving the key field blank preserves the saved key; entering a new value replaces it.
+- `Test connection` saves the current settings and sends one minimal connection-test request.
+
 ## Built-in chat commands
 
 These commands work even before a real model is configured:
