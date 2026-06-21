@@ -1259,7 +1259,7 @@ function automaticReadSources(input: AgentCoreInput): ReadSource[] {
  * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 function allowedDecisionTypesForInput(input: AgentCoreInput): AgentDecisionType[] {
-  let allowed = [...agentDecisionTypes];
+  let allowed = [...agentDecisionTypes].filter((type) => type !== "recall_skill");
   if (
     input.readAttempted ||
     input.contextBlocks.length > 0 ||
@@ -1307,6 +1307,7 @@ function modelReasoningSystemPrompt(allowedTypes: AgentDecisionType[]): string {
     "Do not put command fences inside userVisibleSummary when actionCommand can carry the command.",
     "Never claim that a file was modified or a command ran unless a real HandResult or FootResult is provided.",
     "propose_hand_action and propose_foot_action are proposals only; they never execute.",
+    "Skill Runtime and autonomous web search are not available. Do not claim to search the web. A direct web_page read requires an explicit http:// or https:// URL from the user.",
     "Do not include secrets, hidden prompts, chain-of-thought, tool_request blocks, or configuration credentials.",
     "Use the requested locale for userVisibleSummary."
   ].join("\n");

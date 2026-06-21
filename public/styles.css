@@ -120,7 +120,17 @@ button {
   overflow: auto;
 }
 
+.session-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 6px;
+}
+
 .session-button {
+  min-width: 0;
+  width: 100%;
   border: 1px solid transparent;
   background: transparent;
   border-radius: 8px;
@@ -137,6 +147,24 @@ button {
   background: var(--panel);
   border-color: var(--line);
   box-shadow: 0 8px 20px rgba(37, 32, 26, 0.06);
+}
+
+.session-delete-button {
+  align-self: center;
+  min-width: 48px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.session-delete-button:hover {
+  border-color: #e8b5ad;
+  background: #fff4f2;
+  color: var(--danger);
 }
 
 .session-name {
@@ -341,6 +369,11 @@ button {
   opacity: 0.78;
 }
 
+.composer textarea:disabled {
+  background: #eeece5;
+  cursor: not-allowed;
+}
+
 .tool-drawer {
   flex: 0 0 auto;
   min-width: 0;
@@ -444,7 +477,8 @@ button {
 }
 
 .approve-button,
-.reject-button {
+.reject-button,
+.danger-button {
   border: 0;
   border-radius: 8px;
   padding: 8px 10px;
@@ -459,6 +493,20 @@ button {
 .reject-button {
   background: #efe3dc;
   color: var(--danger);
+}
+
+.danger-button {
+  background: var(--danger);
+  color: white;
+}
+
+.danger-button:hover {
+  background: #8f1c13;
+}
+
+.danger-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .settings-dialog {
@@ -622,7 +670,11 @@ button {
   }
 
   .session-button {
-    min-width: 180px;
+    min-width: 0;
+  }
+
+  .session-row {
+    min-width: 240px;
   }
 
   .workspace {

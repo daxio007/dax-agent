@@ -4,6 +4,10 @@ type ToolStatus = "pending" | "approved" | "running" | "completed" | "failed" | 
 type TranslationKey =
   | "brandSubtitle"
   | "newSession"
+  | "deleteSession"
+  | "deleteSessionDialogTitle"
+  | "deleteSessionPrompt"
+  | "deletingSession"
   | "sessionFallback"
   | "checkingGateway"
   | "refresh"
@@ -141,6 +145,7 @@ interface AppState {
   sending: boolean;
   locale: Locale;
   actionDialogProposal: { proposal: ActionProposal; messageId: string } | null;
+  deleteDialogSession: { id: string; title: string } | null;
 }
 
 interface ConfigTestResult {
@@ -180,7 +185,8 @@ const state: AppState = {
   config: null,
   sending: false,
   locale: initialLocale(),
-  actionDialogProposal: null
+  actionDialogProposal: null,
+  deleteDialogSession: null
 };
 
 const elements = {
@@ -229,13 +235,23 @@ const elements = {
   executeProposalButton: qs<HTMLButtonElement>("#executeProposalButton"),
   rejectProposalButton: qs<HTMLButtonElement>("#rejectProposalButton"),
   customProposalButton: qs<HTMLButtonElement>("#customProposalButton"),
-  closeActionDialogButton: qs<HTMLButtonElement>("#closeActionDialogButton")
+  closeActionDialogButton: qs<HTMLButtonElement>("#closeActionDialogButton"),
+  deleteSessionDialog: qs<HTMLDialogElement>("#deleteSessionDialog"),
+  deleteSessionDialogTitle: qs<HTMLElement>("#deleteSessionDialogTitle"),
+  deleteSessionPrompt: qs<HTMLElement>("#deleteSessionPrompt"),
+  confirmDeleteSessionButton: qs<HTMLButtonElement>("#confirmDeleteSessionButton"),
+  cancelDeleteSessionButton: qs<HTMLButtonElement>("#cancelDeleteSessionButton"),
+  closeDeleteSessionButton: qs<HTMLButtonElement>("#closeDeleteSessionButton")
 };
 
 const messages: Record<Locale, Record<TranslationKey, string>> = {
   "zh-CN": {
     brandSubtitle: "本地网关",
     newSession: "新会话",
+    deleteSession: "删除",
+    deleteSessionDialogTitle: "删除会话",
+    deleteSessionPrompt: "确定删除“{title}”吗？该会话的消息、工具记录和关联运行数据都会被删除。",
+    deletingSession: "删除中...",
     sessionFallback: "会话",
     checkingGateway: "正在检查网关...",
     refresh: "刷新",
@@ -306,6 +322,10 @@ const messages: Record<Locale, Record<TranslationKey, string>> = {
   "en-US": {
     brandSubtitle: "Local gateway",
     newSession: "New session",
+    deleteSession: "Delete",
+    deleteSessionDialogTitle: "Delete session",
+    deleteSessionPrompt: "Delete “{title}”? Its messages, tool runs, and linked runtime records will be removed.",
+    deletingSession: "Deleting...",
     sessionFallback: "Session",
     checkingGateway: "Checking gateway...",
     refresh: "Refresh",
@@ -589,6 +609,8 @@ function renderSessions(): void {
     return;
   }
   for (const session of state.sessions) {
+    const row = document.createElement("div");
+    row.className = "session-row";
     const button = document.createElement("button");
     button.type = "button";
     button.className = `session-button ${session.id === state.activeSessionId ? "active" : ""}`;
@@ -597,7 +619,15 @@ function renderSessions(): void {
       <div class="session-meta">${escapeHtml(t("messageCount", { count: session.messageCount }))} ${t("statusSeparator")} ${formatDate(session.updatedAt)}</div>
     `;
     button.addEventListener("click", () => openSession(session.id));
-    elements.sessionList.append(button);
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "session-delete-button";
+    deleteButton.textContent = t("deleteSession");
+    deleteButton.title = t("deleteSession");
+    deleteButton.setAttribute("aria-label", `${t("deleteSession")} ${displayTitle(session.title)}`);
+    deleteButton.addEventListener("click", () => showDeleteSessionDialog(session));
+    row.append(button, deleteButton);
+    elements.sessionList.append(row);
   }
 }
 
@@ -773,6 +803,68 @@ function customInputForActiveProposal(): void {
   elements.messageInput.focus();
 }
 
+function showDeleteSessionDialog(session: SessionSummary): void {
+  state.deleteDialogSession = { id: session.id, title: displayTitle(session.title) };
+  elements.deleteSessionDialogTitle.textContent = t("deleteSessionDialogTitle");
+  elements.deleteSessionPrompt.textContent = t("deleteSessionPrompt", {
+    title: displayTitle(session.title)
+  });
+  elements.confirmDeleteSessionButton.textContent = t("deleteSession");
+  elements.cancelDeleteSessionButton.textContent = t("cancel");
+  elements.confirmDeleteSessionButton.disabled = false;
+  if (!elements.deleteSessionDialog.open) elements.deleteSessionDialog.showModal();
+}
+
+function closeDeleteSessionDialog(): void {
+  if (elements.deleteSessionDialog.open) elements.deleteSessionDialog.close();
+  state.deleteDialogSession = null;
+}
+
+function setSessionControlsAvailable(available: boolean): void {
+  elements.messageInput.disabled = !available;
+  elements.sendButton.disabled = !available || state.sending;
+  elements.exportButton.disabled = !available;
+}
+
+function clearActiveSession(): void {
+  state.activeSessionId = null;
+  state.activeSession = null;
+  elements.sessionTitle.textContent = t("sessionFallback");
+  renderMessages([]);
+  renderTools([]);
+  setSessionControlsAvailable(false);
+  renderSessions();
+}
+
+async function confirmDeleteSession(): Promise<void> {
+  const target = state.deleteDialogSession;
+  if (!target) return;
+  elements.confirmDeleteSessionButton.disabled = true;
+  elements.confirmDeleteSessionButton.textContent = t("deletingSession");
+  try {
+    const result = await api<{ deleted: boolean }>(`/api/sessions/${target.id}`, {
+      method: "DELETE"
+    });
+    if (!result.deleted) throw new Error(`Session not found: ${target.id}`);
+    const deletedActiveSession = state.activeSessionId === target.id;
+    if (deletedActiveSession) {
+      state.activeSessionId = null;
+      state.activeSession = null;
+    }
+    closeDeleteSessionDialog();
+    await loadSessions();
+    if (state.activeSessionId) {
+      await openSession(state.activeSessionId);
+    } else {
+      clearActiveSession();
+    }
+  } catch (error) {
+    alert(error instanceof Error ? error.message : String(error));
+    elements.confirmDeleteSessionButton.disabled = false;
+    elements.confirmDeleteSessionButton.textContent = t("deleteSession");
+  }
+}
+
 /**
  * 使用方法：加载配置或打开设置对话框时调用。
  * 作用：把有效 Provider、Base URL、模型、密钥状态和安全选项同步到表单。
@@ -942,6 +1034,7 @@ async function openSession(sessionId: string): Promise<void> {
   renderSessions();
   const session = await api<SessionDetail>(`/api/sessions/${sessionId}`);
   state.activeSession = session;
+  setSessionControlsAvailable(true);
   elements.sessionTitle.textContent = displayTitle(session.title);
   renderMessages(session.messages);
   renderTools(session.toolRuns.slice().reverse());
@@ -959,15 +1052,11 @@ async function openSession(sessionId: string): Promise<void> {
 async function refreshActive(): Promise<void> {
   await loadConfig();
   await loadSessions();
-  if (!state.activeSessionId) {
-    const session = await api<SessionSummary>("/api/sessions", {
-      method: "POST",
-      body: JSON.stringify({ title: t("newSessionTitle") })
-    });
-    state.activeSessionId = session.id;
-    await loadSessions();
+  if (state.activeSessionId) {
+    await openSession(state.activeSessionId);
+  } else {
+    clearActiveSession();
   }
-  if (state.activeSessionId) await openSession(state.activeSessionId);
 }
 
 /**
@@ -1073,14 +1162,23 @@ function applyLocale(): void {
   elements.executeProposalButton.textContent = t("actionProposalExecute");
   elements.rejectProposalButton.textContent = t("actionProposalReject");
   elements.customProposalButton.textContent = t("actionProposalCustom");
+  elements.deleteSessionDialogTitle.textContent = t("deleteSessionDialogTitle");
+  elements.confirmDeleteSessionButton.textContent = t("deleteSession");
+  elements.cancelDeleteSessionButton.textContent = t("cancel");
   elements.closeSettingsButton.setAttribute("aria-label", t("close"));
   elements.closeActionDialogButton.setAttribute("aria-label", t("close"));
+  elements.closeDeleteSessionButton.setAttribute("aria-label", t("close"));
   elements.languageInput.setAttribute("aria-label", t("languageLabel"));
   elements.languageInput.value = state.locale;
   updateProviderFields();
   updateApiKeyStatus();
   if (!state.config) {
     elements.statusLine.textContent = t("checkingGateway");
+  }
+  if (state.deleteDialogSession) {
+    elements.deleteSessionPrompt.textContent = t("deleteSessionPrompt", {
+      title: state.deleteDialogSession.title
+    });
   }
   renderSessions();
 }
@@ -1188,6 +1286,12 @@ elements.executeProposalButton.addEventListener("click", executeActiveProposal);
 elements.rejectProposalButton.addEventListener("click", rejectActiveProposal);
 elements.customProposalButton.addEventListener("click", customInputForActiveProposal);
 elements.closeActionDialogButton.addEventListener("click", rejectActiveProposal);
+elements.confirmDeleteSessionButton.addEventListener("click", confirmDeleteSession);
+elements.cancelDeleteSessionButton.addEventListener("click", closeDeleteSessionDialog);
+elements.closeDeleteSessionButton.addEventListener("click", closeDeleteSessionDialog);
+elements.deleteSessionDialog.addEventListener("cancel", () => {
+  state.deleteDialogSession = null;
+});
 elements.settingsButton.addEventListener("click", () => {
   applyConfigToForm();
   setSettingsFeedback(elements.providerInput.value === "echo" ? t("echoNotExternal") : "");

@@ -79,6 +79,20 @@
       </div>
     </dialog>
 
+    <dialog id="deleteSessionDialog" class="settings-dialog delete-session-dialog">
+      <div class="action-dialog-inner">
+        <div class="dialog-head">
+          <h2 id="deleteSessionDialogTitle">删除会话</h2>
+          <button class="icon-button" type="button" id="closeDeleteSessionButton" aria-label="关闭">x</button>
+        </div>
+        <p class="action-summary" id="deleteSessionPrompt"></p>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="cancelDeleteSessionButton">取消</button>
+          <button class="danger-button" type="button" id="confirmDeleteSessionButton">删除</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="settingsDialog" class="settings-dialog">
       <form method="dialog" class="settings-form" id="settingsForm">
         <div class="dialog-head">

@@ -474,7 +474,7 @@ function classifyIntents(text: string, event: ListenEvent): ListenIntent[] {
   if (/先暂停|暂停|等一下|停一下|pause|hold on/.test(lower)) intents.add("pause");
   if (/^继续(?:$|[，,。.！!\s]|但是|但)|继续吧|接着|下一步|continue|resume/.test(lower)) intents.add("continue");
   if (/不对|不是|我没有|应该是|纠正|更正|not .* but|instead/i.test(text)) intents.add("correct");
-  if (/批准|同意|可以|approve|approved/i.test(text)) intents.add("approve");
+  if (isExplicitApproval(text)) intents.add("approve");
   if (/拒绝|不同意|不可以|reject|rejected/i.test(text)) intents.add("reject");
   if (/提交代码|提交一下|git commit|\bcommit\b/i.test(text)) intents.add("commit");
   if (/推送|push|github|远程仓库/i.test(text)) intents.add("push");
@@ -544,13 +544,20 @@ function extractSpeechActs(text: string, primaryIntent: ListenIntent): SpeechAct
   if (/开始|继续|暂停|停止|提交|实现|写|不要|必须|先|现在|请/i.test(text)) acts.add("instruction");
   if (/不要|只能|只|必须|不能|不需要|先.*再|全程|每个|默认/i.test(text)) acts.add("constraint");
   if (primaryIntent === "correct") acts.add("correction");
-  if (/对|是的|没错|确认|可以|同意|yes|ok/i.test(text)) acts.add("confirmation");
+  if (isExplicitApproval(text)) acts.add("confirmation");
   if (/不行|不要|拒绝|不是|no\b/i.test(text)) acts.add("rejection");
   if (/我希望|我想|我不想|我需要|偏好|喜欢|不喜欢/i.test(text)) acts.add("preference");
   if (primaryIntent === "status") acts.add("status_request");
   if (/讨论|聊|想想|探讨|大胆|你觉得/i.test(text)) acts.add("brainstorm");
   if (!acts.size) acts.add("casual");
   return [...acts];
+}
+
+function isExplicitApproval(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return /^(批准|同意|可以|确认|好的?|行|开始|执行|yes|y|ok|approve|approved|run|execute)[了吧啊呀！!。.]*$/i.test(
+    normalized
+  ) || /^(我)?(批准|同意|确认)(执行|运行|这个|该操作|该命令)/i.test(normalized);
 }
 
 /**

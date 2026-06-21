@@ -199,13 +199,94 @@ export async function getSession(sessionId: string): Promise<SessionDetail | nul
 export async function deleteSession(sessionId: string): Promise<boolean> {
   return mutate((store) => {
     const before = store.sessions.length;
+    const sessionMessages = store.messages.filter((message) => message.sessionId === sessionId);
+    const sessionAudit = store.audit.filter((record) => record.sessionId === sessionId);
+    const stringMetaIds = (key: string): string[] =>
+      sessionMessages
+        .map((message) => message.meta?.[key])
+        .filter((value): value is string => typeof value === "string" && Boolean(value));
+    const auditIds = (key: keyof AuditRecord): Set<string> =>
+      new Set(
+        sessionAudit
+          .map((record) => record[key])
+          .filter((value): value is string => typeof value === "string" && Boolean(value))
+      );
+    const listenEventIds = auditIds("listenEventId");
+    const listenResultIds = auditIds("listenResultId");
+    const speakPlanIds = auditIds("speakPlanId");
+    const speakMessageIds = auditIds("speakMessageId");
+    const speakResultIds = auditIds("speakResultId");
+    const readEventIds = auditIds("readEventId");
+    const handPlanIds = auditIds("handPlanId");
+    const handPreviewIds = auditIds("handPreviewId");
+    const handResultIds = auditIds("handResultId");
+    const footPlanIds = auditIds("footPlanId");
+    const footPreviewIds = auditIds("footPreviewId");
+    const footResultIds = auditIds("footResultId");
+
+    for (const event of store.listenEvents) {
+      if (event.sessionId === sessionId) listenEventIds.add(event.id);
+    }
+    for (const id of stringMetaIds("listenEventId")) listenEventIds.add(id);
+    for (const id of stringMetaIds("listenResultId")) listenResultIds.add(id);
+    for (const result of store.listenResults) {
+      if (listenEventIds.has(result.eventId)) listenResultIds.add(result.id);
+    }
+    for (const id of stringMetaIds("speakPlanId")) speakPlanIds.add(id);
+    for (const id of stringMetaIds("speakMessageId")) speakMessageIds.add(id);
+    for (const id of stringMetaIds("speakResultId")) speakResultIds.add(id);
+    for (const preview of store.handPreviews) {
+      if (handPlanIds.has(preview.planId)) handPreviewIds.add(preview.id);
+    }
+    for (const result of store.handResults) {
+      if (handPlanIds.has(result.planId) || (result.previewId && handPreviewIds.has(result.previewId))) {
+        handResultIds.add(result.id);
+      }
+    }
+    for (const preview of store.footPreviews) {
+      if (footPlanIds.has(preview.planId)) footPreviewIds.add(preview.id);
+    }
+    for (const result of store.footResults) {
+      if (footPlanIds.has(result.planId) || (result.previewId && footPreviewIds.has(result.previewId))) {
+        footResultIds.add(result.id);
+      }
+    }
+
     store.sessions = store.sessions.filter((session) => session.id !== sessionId);
     store.messages = store.messages.filter((message) => message.sessionId !== sessionId);
     store.toolRuns = store.toolRuns.filter((run) => run.sessionId !== sessionId);
+    store.readEvents = store.readEvents.filter((event) => !readEventIds.has(event.id));
+    store.listenEvents = store.listenEvents.filter((event) => !listenEventIds.has(event.id));
+    store.listenResults = store.listenResults.filter((result) => !listenResultIds.has(result.id));
+    store.speakPlans = store.speakPlans.filter((plan) => !speakPlanIds.has(plan.id));
+    store.speakMessages = store.speakMessages.filter((message) => !speakMessageIds.has(message.id));
+    store.speakResults = store.speakResults.filter((result) => !speakResultIds.has(result.id));
+    store.handPlans = store.handPlans.filter((plan) => !handPlanIds.has(plan.id));
+    store.handPreviews = store.handPreviews.filter((preview) => !handPreviewIds.has(preview.id));
+    store.handResults = store.handResults.filter((result) => !handResultIds.has(result.id));
+    store.footPlans = store.footPlans.filter((plan) => !footPlanIds.has(plan.id));
+    store.footPreviews = store.footPreviews.filter((preview) => !footPreviewIds.has(preview.id));
+    store.footResults = store.footResults.filter((result) => !footResultIds.has(result.id));
     store.agentDecisions = store.agentDecisions.filter((decision) => decision.sessionId !== sessionId);
     store.policyGateResults = store.policyGateResults.filter((result) => result.sessionId !== sessionId);
     store.capabilityRoutes = store.capabilityRoutes.filter((route) => route.sessionId !== sessionId);
     store.agentCoreResults = store.agentCoreResults.filter((result) => result.sessionId !== sessionId);
+    store.audit = store.audit.filter(
+      (record) =>
+        record.sessionId !== sessionId &&
+        (!record.listenEventId || !listenEventIds.has(record.listenEventId)) &&
+        (!record.listenResultId || !listenResultIds.has(record.listenResultId)) &&
+        (!record.speakPlanId || !speakPlanIds.has(record.speakPlanId)) &&
+        (!record.speakMessageId || !speakMessageIds.has(record.speakMessageId)) &&
+        (!record.speakResultId || !speakResultIds.has(record.speakResultId)) &&
+        (!record.readEventId || !readEventIds.has(record.readEventId)) &&
+        (!record.handPlanId || !handPlanIds.has(record.handPlanId)) &&
+        (!record.handPreviewId || !handPreviewIds.has(record.handPreviewId)) &&
+        (!record.handResultId || !handResultIds.has(record.handResultId)) &&
+        (!record.footPlanId || !footPlanIds.has(record.footPlanId)) &&
+        (!record.footPreviewId || !footPreviewIds.has(record.footPreviewId)) &&
+        (!record.footResultId || !footResultIds.has(record.footResultId))
+    );
     store.audit.push({
       id: newId("aud"),
       type: "session.deleted",
