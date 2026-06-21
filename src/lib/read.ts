@@ -1,6 +1,7 @@
 import { open, readdir, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { readWebPageWithMcp, searchWebWithMcp } from "./mcp.js";
 import { loadConfig, resolveWorkspace } from "./config.js";
 import { newId, nowIso } from "./ids.js";
 import { recordReadEvent } from "./store.js";
@@ -26,6 +27,7 @@ const readSourceKinds = new Set<ReadSourceKind>([
   "document",
   "workspace",
   "web_page",
+  "web_search",
   "computer_config",
   "app_content",
   "communication",
@@ -152,7 +154,9 @@ export function createReadPlan(input: CreateReadPlanInput, config: AppConfig | n
   const sources = input.sources.map((source) => coerceReadSource(source));
   const maxBytes = positiveNumber(input.maxBytes, config?.security?.maxReadBytes, DEFAULT_MAX_BYTES);
   const maxFiles = positiveNumber(input.maxFiles, config?.security?.maxSearchResults, DEFAULT_MAX_FILES);
-  const allowNetwork = input.allowNetwork ?? sources.some((source) => source.kind === "web_page");
+  const allowNetwork = input.allowNetwork ?? sources.some(
+    (source) => source.kind === "web_page" || source.kind === "web_search"
+  );
   return {
     id: newId("rdp"),
     goal: input.goal.trim() || "Read context for the current task.",
@@ -223,7 +227,7 @@ export function inferReadRisk(source: ReadSource): ReadRiskLevel {
  */
 export function detectRiskFlags(source: ReadSource, content = "", extraFlags: string[] = []): string[] {
   const flags = new Set(extraFlags);
-  if (source.kind === "web_page") {
+  if (source.kind === "web_page" || source.kind === "web_search") {
     flags.add("external_source");
     flags.add("unverified_content");
   }
@@ -424,6 +428,57 @@ export async function readWebPage(
   }
 }
 
+export async function searchAndReadWeb(
+  source: ReadSource,
+  allowNetwork: boolean,
+  planId?: string,
+  maxBytes = DEFAULT_MAX_BYTES,
+  maxResults = 5
+): Promise<ReadResult> {
+  if (!allowNetwork) {
+    throw new Error("Network reading is disabled for this read plan.");
+  }
+  const search = await searchWebWithMcp(source.target, Math.min(Math.max(maxResults, 1), 5));
+  if (!search.results.length) {
+    throw new Error(`No web search results were returned for: ${source.target}`);
+  }
+  const pageLimit = Math.min(search.results.length, 3);
+  const perPageChars = Math.max(6000, Math.floor(maxBytes / pageLimit));
+  const sections: string[] = [
+    `Search query: ${search.query}`,
+    "",
+    "Search results:",
+    ...search.results.map(
+      (result, index) => `${index + 1}. ${result.title}\n${result.url}\n${result.description}`
+    )
+  ];
+  for (const result of search.results.slice(0, pageLimit)) {
+    try {
+      const snapshot = await readWebPageWithMcp(result.url, perPageChars);
+      sections.push("", `## ${result.title}`, `Source: ${result.url}`, "", snapshot);
+    } catch (error) {
+      sections.push(
+        "",
+        `## ${result.title}`,
+        `Source: ${result.url}`,
+        "",
+        `Page read failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+  return createReadResult(
+    source,
+    {
+      title: `Web research: ${search.query}`,
+      uri: `web-search://${encodeURIComponent(search.query)}`,
+      mimeType: "text/markdown; charset=utf-8",
+      content: truncateText(sections.join("\n"), maxBytes),
+      riskFlags: ["web_search", "multiple_external_sources"]
+    },
+    planId
+  );
+}
+
 /**
  * 读取当前电脑配置和运行环境。
  *
@@ -562,6 +617,8 @@ export async function executeReadSource(
       return readLocalText(source, config, plan.id, plan.maxBytes);
     case "web_page":
       return readWebPage(source, plan.allowNetwork, plan.id, plan.maxBytes);
+    case "web_search":
+      return searchAndReadWeb(source, plan.allowNetwork, plan.id, plan.maxBytes, plan.maxFiles);
     case "computer_config":
       return readComputerConfig(source, plan.id);
     case "search":
@@ -992,7 +1049,7 @@ function maskSensitiveText(text: string): string {
  * @param source 当前要读取、转换、评估或建立上下文的来源定义。
  */
 function trustForSource(source: ReadSource): ContextBlock["trust"] {
-  if (source.kind === "web_page" || source.kind === "search") return "low";
+  if (source.kind === "web_page" || source.kind === "web_search" || source.kind === "search") return "low";
   if (source.kind === "mcp_resource" || source.kind === "app_content") return "medium";
   return "high";
 }
@@ -1010,7 +1067,12 @@ function trustForSource(source: ReadSource): ContextBlock["trust"] {
  * @param source 当前要读取、转换、评估或建立上下文的来源定义。
  */
 function freshnessForSource(source: ReadSource): ContextBlock["freshness"] {
-  if (source.kind === "computer_config" || source.kind === "web_page" || source.kind === "app_state") return "fresh";
+  if (
+    source.kind === "computer_config" ||
+    source.kind === "web_page" ||
+    source.kind === "web_search" ||
+    source.kind === "app_state"
+  ) return "fresh";
   return "unknown";
 }
 

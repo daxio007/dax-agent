@@ -814,8 +814,11 @@ function detectContextNeeds(
   if (/文档|资料|pdf|word|markdown|readme/i.test(text)) {
     addContextNeed(needs, "document", "User referred to documents that may need reading.", "docs", true);
   }
-  if (/网页|网站|链接|url|http|官网|web/i.test(text)) {
-    addContextNeed(needs, "web_page", "User referred to a web page or online source.", extractFirstUrl(text) || "https://example.com", false);
+  const explicitUrl = extractFirstUrl(text);
+  if (explicitUrl) {
+    addContextNeed(needs, "web_page", "User provided a specific web page to read.", explicitUrl, true);
+  } else if (/网上|联网|搜索|搜一下|查找|调研|所有文章|网页|网站|web|online|search/i.test(text)) {
+    addContextNeed(needs, "web_search", "User requested public web search and page reading.", extractWebSearchQuery(text), true);
   }
   if (/电脑配置|系统配置|node|npm|环境变量|本机|配置/i.test(text)) {
     addContextNeed(needs, "computer_config", "User referred to local computer or runtime configuration.", "system", false);
@@ -1063,6 +1066,7 @@ function readKindForContextNeed(kind: ListenContextNeed["kind"]): ReadSourceKind
     memory: "memory",
     document: "document",
     web_page: "web_page",
+    web_search: "web_search",
     computer_config: "computer_config",
     app_content: "app_content",
     mcp_resource: "mcp_resource"
@@ -1087,12 +1091,27 @@ function defaultReadTargetForNeed(kind: ListenContextNeed["kind"]): string {
     memory: "docs/project-memory.md",
     document: "docs",
     web_page: "https://example.com",
+    web_search: "",
     computer_config: "system",
     app_content: "current",
     mcp_resource: "mcp://resources",
     none: ""
   };
   return targets[kind];
+}
+
+function extractWebSearchQuery(text: string): string {
+  const about = text.match(/关于\s*([^？?，,。；;]{2,120})/i)?.[1]?.trim();
+  if (about) {
+    const cleaned = about
+      .replace(/(?:的)?(?:所有)?(?:文章|资料|内容).*$/i, "")
+      .replace(/[吗呢吧啊呀]+$/i, "")
+      .trim();
+    return cleaned || about;
+  }
+  const request = text.match(/(?:搜索|搜一下|查找|调研)\s*([^？?，,。；;]{2,120})/i)?.[1]?.trim();
+  if (request) return request.replace(/[吗呢吧啊呀]+$/i, "").trim();
+  return text.replace(/https?:\/\/\S+/gi, "").replace(/\s+/g, " ").trim().slice(0, 180);
 }
 
 /**

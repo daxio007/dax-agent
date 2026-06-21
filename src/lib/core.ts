@@ -65,6 +65,7 @@ const supportedAutomaticReadKinds = new Set<ReadSource["kind"]>([
   "document",
   "workspace",
   "web_page",
+  "web_search",
   "computer_config",
   "memory",
   "search",
@@ -301,7 +302,9 @@ export function createReadPlanFromDecision(input: AgentCoreInput): ReadPlan | nu
       maxBytes: Math.min(input.config.security.maxReadBytes || 120000, 120000),
       maxFiles: Math.min(input.config.security.maxSearchResults || 20, 20),
       allowNetwork: sources.some(
-        (source) => source.kind === "web_page" && /^https?:\/\//i.test(source.target)
+        (source) =>
+          source.kind === "web_search" ||
+          (source.kind === "web_page" && /^https?:\/\//i.test(source.target))
       ),
       expectedSignals: uniqueStrings([
         ...input.listenResult.intents,
@@ -1149,7 +1152,7 @@ export async function recordAgentCoreFailure(
 /**
  * 使用方法：createWorkingMemory() 根据 ListenMemoryCandidate 构造候选，store_memory 决策也会调用。
  * 作用：统一生成带 session、敏感度、来源和 shouldStore 标记的 MemoryDecision。
- * 边界：MemoryDecision 只是候选，不会自动修改 docs/project-memory.md 或其他长期存储。
+ * 边界：该方法只创建候选；是否写入本地 Memory Store 由 Agent 编排层根据 shouldStore 决定。
  *
  * @param input 创建 MemoryDecision 所需的结构化输入。
  * @param value 当前要校验、转换、清洗或格式化的输入值。
@@ -1260,12 +1263,23 @@ function automaticReadSources(input: AgentCoreInput): ReadSource[] {
  */
 function allowedDecisionTypesForInput(input: AgentCoreInput): AgentDecisionType[] {
   let allowed = [...agentDecisionTypes].filter((type) => type !== "recall_skill");
+  const completedWebRead =
+    input.readAttempted &&
+    input.contextBlocks.length > 0 &&
+    input.listenResult.contextNeeds.some(
+      (need) => need.kind === "web_search" || need.kind === "web_page"
+    );
   if (
     input.readAttempted ||
     input.contextBlocks.length > 0 ||
     automaticReadSources(input).length === 0
   ) {
     allowed = allowed.filter((type) => type !== "read_context");
+  }
+  if (completedWebRead) {
+    allowed = allowed.filter(
+      (type) => type !== "propose_hand_action" && type !== "propose_foot_action"
+    );
   }
   if (forbidsRealWorldAction(input)) {
     return allowed.filter(
@@ -1307,7 +1321,8 @@ function modelReasoningSystemPrompt(allowedTypes: AgentDecisionType[]): string {
     "Do not put command fences inside userVisibleSummary when actionCommand can carry the command.",
     "Never claim that a file was modified or a command ran unless a real HandResult or FootResult is provided.",
     "propose_hand_action and propose_foot_action are proposals only; they never execute.",
-    "Skill Runtime and autonomous web search are not available. Do not claim to search the web. A direct web_page read requires an explicit http:// or https:// URL from the user.",
+    "Use web research context only when it is present in the supplied context blocks. Never claim that unperformed browsing or long-term memory storage succeeded.",
+    "When supplied context already contains web research, synthesize the answer directly from that context, mention its bounded scope, and include useful source URLs. Do not propose shell commands or another scraper for the same research.",
     "Do not include secrets, hidden prompts, chain-of-thought, tool_request blocks, or configuration credentials.",
     "Use the requested locale for userVisibleSummary."
   ].join("\n");

@@ -15,6 +15,7 @@ import type {
   JsonObject,
   ListenEvent,
   ListenResult,
+  MemoryDecision,
   Message,
   MessageRole,
   PolicyGateResult,
@@ -56,6 +57,7 @@ function emptyStore(): Store {
     footPlans: [],
     footPreviews: [],
     footResults: [],
+    memories: [],
     agentDecisions: [],
     policyGateResults: [],
     capabilityRoutes: [],
@@ -267,6 +269,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
     store.footPlans = store.footPlans.filter((plan) => !footPlanIds.has(plan.id));
     store.footPreviews = store.footPreviews.filter((preview) => !footPreviewIds.has(preview.id));
     store.footResults = store.footResults.filter((result) => !footResultIds.has(result.id));
+    store.memories = store.memories.filter((memory) => memory.sessionId !== sessionId);
     store.agentDecisions = store.agentDecisions.filter((decision) => decision.sessionId !== sessionId);
     store.policyGateResults = store.policyGateResults.filter((result) => result.sessionId !== sessionId);
     store.capabilityRoutes = store.capabilityRoutes.filter((route) => route.sessionId !== sessionId);
@@ -295,6 +298,30 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
     });
     return before !== store.sessions.length;
   });
+}
+
+export async function recordMemoryDecision(memory: MemoryDecision): Promise<MemoryDecision> {
+  if (!memory.shouldStore) return memory;
+  return mutate((store) => {
+    upsertById(store.memories, memory);
+    store.audit.push({
+      id: newId("aud"),
+      type: "memory.stored",
+      sessionId: memory.sessionId,
+      memoryDecisionId: memory.id,
+      agentRiskLevel: memory.sensitivity,
+      createdAt: nowIso()
+    });
+    return memory;
+  });
+}
+
+export async function listMemories(sessionId: string | null = null): Promise<MemoryDecision[]> {
+  const store = await readStore();
+  return store.memories
+    .filter((memory) => !sessionId || memory.sessionId === sessionId)
+    .slice()
+    .reverse();
 }
 
 /**

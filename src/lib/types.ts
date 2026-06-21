@@ -19,6 +19,7 @@ export type ReadSourceKind =
   | "document"
   | "workspace"
   | "web_page"
+  | "web_search"
   | "computer_config"
   | "app_content"
   | "communication"
@@ -202,6 +203,7 @@ export interface ListenContextNeed {
     | "memory"
     | "document"
     | "web_page"
+    | "web_search"
     | "computer_config"
     | "app_content"
     | "mcp_resource"
@@ -834,6 +836,7 @@ export interface AuditRecord {
   agentDecisionType?: AgentDecisionType;
   agentDecisionSource?: AgentDecisionSource;
   agentRiskLevel?: AgentRiskLevel;
+  memoryDecisionId?: string;
   speakMode?: SpeakMode;
   speakAudience?: SpeakAudience;
   speakChannel?: SpeakChannel;
@@ -866,6 +869,7 @@ export interface Store {
   footPlans: FootPlan[];
   footPreviews: FootPreview[];
   footResults: FootResult[];
+  memories: MemoryDecision[];
   agentDecisions: AgentDecision[];
   policyGateResults: PolicyGateResult[];
   capabilityRoutes: CapabilityRoute[];

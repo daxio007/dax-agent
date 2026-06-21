@@ -4,6 +4,7 @@ import {
   createToolRun,
   getRecentMessages,
   listToolRuns,
+  recordMemoryDecision,
   recordSpeakInteraction,
   updateToolRun
 } from "./store.js";
@@ -732,6 +733,9 @@ export async function processUserMessage(
       ...(finalResult.decision.actionProposal ? ["action_proposal_not_executed"] : []),
       ...finalResult.warnings.map(() => "agent_core_warning")
     ];
+    if (finalResult.decision.type === "store_memory" && finalResult.decision.memoryDecision?.shouldStore) {
+      await recordMemoryDecision(finalResult.decision.memoryDecision);
+    }
     const spoken = await addSpokenAssistantMessage(
       sessionId,
       finalResult.decision.userVisibleSummary,

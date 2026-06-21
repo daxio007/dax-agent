@@ -23,6 +23,7 @@ import {
   recordHandResult,
   listListenEvents,
   listListenResults,
+  listMemories,
   listPolicyGateResults,
   listReadEvents,
   listSessions,
@@ -1180,6 +1181,11 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
 
   if (method === "GET" && url.pathname === "/api/tool-runs") {
     sendJson(res, 200, await listToolRuns(url.searchParams.get("sessionId")));
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/memories") {
+    sendJson(res, 200, await listMemories(url.searchParams.get("sessionId")));
     return;
   }
 
