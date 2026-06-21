@@ -30,7 +30,11 @@ export const toolManifest: ToolDefinition[] = [
     name: "shell.run",
     description: "Run a shell command inside the workspace after explicit user approval.",
     approvalRequired: true,
-    inputSchema: { command: "string required", cwd: "string optional, defaults to workspace root" }
+    inputSchema: {
+      command: "string required",
+      cwd: "string optional, defaults to workspace root",
+      timeoutMs: "number optional"
+    }
   }
 ];
 
@@ -56,6 +60,12 @@ export function getTool(name: string): ToolDefinition | null {
 function stringInput(input: JsonObject, key: string): string | undefined {
   const value = input[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function positiveNumberInput(input: JsonObject, key: string): number | undefined {
+  const value = input[key];
+  const numberValue = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? Math.floor(numberValue) : undefined;
 }
 
 /**
@@ -210,6 +220,7 @@ async function runShell(input: JsonObject, config: AppConfig): Promise<string> {
           targetKind: "workspace",
           command,
           cwd: stringInput(input, "cwd") || ".",
+          timeoutMs: positiveNumberInput(input, "timeoutMs"),
           reason: "Execute the approved shell.run command.",
           expectedEffect: "Produce command output for the tool run.",
           inputSummary: command

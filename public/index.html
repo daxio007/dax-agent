@@ -61,6 +61,24 @@
       </main>
     </div>
 
+    <dialog id="actionDialog" class="action-dialog">
+      <div class="action-dialog-inner">
+        <div class="dialog-head">
+          <h2 id="actionDialogTitle">需要你确认</h2>
+          <button class="icon-button" type="button" id="closeActionDialogButton" aria-label="关闭">x</button>
+        </div>
+        <p class="action-summary" id="actionDialogSummary"></p>
+        <div class="action-risk" id="actionDialogRisk"></div>
+        <div class="action-command-label" id="actionCommandLabel">建议命令</div>
+        <pre class="action-command" id="actionDialogCommand"></pre>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="customProposalButton">我自己输入</button>
+          <button class="ghost-button" type="button" id="rejectProposalButton">暂不执行</button>
+          <button class="primary-action compact" type="button" id="executeProposalButton">批准并执行</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="settingsDialog" class="settings-dialog">
       <form method="dialog" class="settings-form" id="settingsForm">
         <div class="dialog-head">

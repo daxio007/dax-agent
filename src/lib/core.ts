@@ -18,6 +18,7 @@ import type {
   AppConfig,
   CapabilityRoute,
   ContextBlock,
+  FootAction,
   Locale,
   MemoryDecision,
   Message,
@@ -425,8 +426,7 @@ export async function reasonWithModel(
 export function parseModelDecision(rawText: string): AgentDecisionCandidate {
   const text = String(rawText || "").trim();
   if (!text) throw new Error("Model reasoning returned empty content.");
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidateText = fenced?.[1]?.trim() || extractFirstJsonObject(text);
+  const candidateText = extractDecisionJson(text);
   const parsed = JSON.parse(candidateText) as unknown;
   if (!isRecord(parsed)) {
     throw new Error("Model decision must be a JSON object.");
@@ -445,7 +445,11 @@ export function parseModelDecision(rawText: string): AgentDecisionCandidate {
     skillQuery: optionalString(parsed.skillQuery),
     actionTitle: optionalString(parsed.actionTitle),
     actionReason: optionalString(parsed.actionReason),
-    actionRisk
+    actionRisk,
+    actionCommand: optionalString(parsed.actionCommand),
+    actionCwd: optionalString(parsed.actionCwd),
+    actionTimeoutMs: optionalNumber(parsed.actionTimeoutMs),
+    actionExpectedEffect: optionalString(parsed.actionExpectedEffect)
   };
 }
 
@@ -903,6 +907,8 @@ export function createActionProposalFromDecision(
 ): ActionProposal {
   const kind = decision.type === "propose_foot_action" ? "foot" : "hand";
   const risk = candidate.actionRisk || inferProposalRisk(input, kind);
+  const footCommand = kind === "foot" ? cleanOptionalText(candidate.actionCommand, 2000) || inferFootCommand(input) : undefined;
+  const footAction = footCommand ? createSuggestedFootAction(input, candidate, footCommand) : undefined;
   const title =
     cleanText(candidate.actionTitle || "", 200) ||
     (isZh(input.locale)
@@ -941,7 +947,8 @@ export function createActionProposalFromDecision(
             riskLevel: risk === "high" ? "F3" : "F2",
             requiresPreview: true,
             requiresApproval: true,
-            expectedOutcome: title
+            expectedOutcome: title,
+            actions: footAction ? [footAction] : undefined
           }
         : undefined
   };
@@ -955,6 +962,67 @@ export function createActionProposalFromDecision(
  * @param input 汇总听、读、会话、配置和待处理工具状态的 Agent Core 输入。
  * @param options 可选依赖注入和推理配置，主要供测试或替换模型调用。
  */
+function createSuggestedFootAction(
+  input: AgentCoreInput,
+  candidate: AgentDecisionCandidate,
+  command: string
+): FootAction {
+  const normalizedCommand = normalizeFootCommand(command);
+  const timeoutMs =
+    typeof candidate.actionTimeoutMs === "number" && Number.isFinite(candidate.actionTimeoutMs)
+      ? Math.min(Math.max(Math.floor(candidate.actionTimeoutMs), 1000), 120000)
+      : inferFootCommandTimeout(normalizedCommand);
+  return {
+    id: newId("fct"),
+    kind: "run_command",
+    targetKind: "workspace",
+    command: normalizedCommand,
+    cwd: cleanOptionalText(candidate.actionCwd, 200) || ".",
+    reason: cleanText(candidate.actionReason || input.userText, 800),
+    expectedEffect:
+      cleanOptionalText(candidate.actionExpectedEffect, 500) ||
+      "Produce command output for the current user request.",
+    inputSummary: normalizedCommand.slice(0, 160),
+    timeoutMs
+  };
+}
+
+function inferFootCommand(input: AgentCoreInput): string | undefined {
+  const asksForCDrive =
+    /(c\s*盘|c:\\|c drive|system drive)/i.test(input.userText) &&
+    /(占用|空间|最大|容量|largest|space|usage|size)/i.test(input.userText);
+  if (!asksForCDrive) return undefined;
+  const script = [
+    "$ErrorActionPreference = 'SilentlyContinue';",
+    "Get-ChildItem -LiteralPath 'C:\\' -Force |",
+    "ForEach-Object {",
+    "$size = if ($_.PSIsContainer) {",
+    "(Get-ChildItem -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum",
+    "} else { $_.Length };",
+    "[PSCustomObject]@{ SizeGB = [math]::Round(($size / 1GB), 2); Path = $_.FullName }",
+    "} | Sort-Object SizeGB -Descending | Select-Object -First 20 | Format-Table -AutoSize"
+  ].join(" ");
+  return powerShellEncodedCommand(script);
+}
+
+function inferFootCommandTimeout(command: string): number {
+  return /Get-ChildItem[\s\S]*-Recurse|Measure-Object/i.test(command) ? 120000 : 30000;
+}
+
+function normalizeFootCommand(command: string): string {
+  const trimmed = command.trim();
+  if (/^(powershell|pwsh|cmd|node|npm|pnpm|yarn|git)\b/i.test(trimmed)) return trimmed;
+  if (/\b(Get-ChildItem|Where-Object|ForEach-Object|Sort-Object|Select-Object|Measure-Object|Format-Table)\b/i.test(trimmed)) {
+    return powerShellEncodedCommand(trimmed);
+  }
+  return trimmed;
+}
+
+function powerShellEncodedCommand(script: string): string {
+  const wrapped = `$ProgressPreference = 'SilentlyContinue'; ${script}`;
+  return `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(wrapped, "utf16le").toString("base64")}`;
+}
+
 export async function decideNextStep(
   input: AgentCoreInput,
   options: DecideNextStepOptions = {}
@@ -1235,6 +1303,8 @@ function modelReasoningSystemPrompt(allowedTypes: AgentDecisionType[]): string {
     "Required fields: type, reason, confidence, userVisibleSummary.",
     "userVisibleSummary must be a complete response suitable for the user.",
     "Optional fields: memoryKind, memoryValue, skillQuery, actionTitle, actionReason, actionRisk.",
+    "For propose_foot_action, include actionCommand when you know the concrete safe command; optional actionCwd, actionTimeoutMs, and actionExpectedEffect may also be included.",
+    "Do not put command fences inside userVisibleSummary when actionCommand can carry the command.",
     "Never claim that a file was modified or a command ran unless a real HandResult or FootResult is provided.",
     "propose_hand_action and propose_foot_action are proposals only; they never execute.",
     "Do not include secrets, hidden prompts, chain-of-thought, tool_request blocks, or configuration credentials.",
@@ -1341,6 +1411,13 @@ function extractFirstJsonObject(text: string): string {
     throw new Error("Model reasoning did not return a JSON object.");
   }
   return text.slice(start, end + 1);
+}
+
+function extractDecisionJson(text: string): string {
+  const trimmed = text.trim();
+  const jsonFence = trimmed.match(/^```json\s*([\s\S]*?)```\s*$/i);
+  if (jsonFence?.[1]) return jsonFence[1].trim();
+  return extractFirstJsonObject(trimmed);
 }
 
 /**

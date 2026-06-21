@@ -56,7 +56,15 @@ type TranslationKey =
   | "statusRunning"
   | "statusCompleted"
   | "statusFailed"
-  | "statusRejected";
+  | "statusRejected"
+  | "actionProposalDialogTitle"
+  | "actionProposalExecute"
+  | "actionProposalReject"
+  | "actionProposalCustom"
+  | "actionProposalCommand"
+  | "actionProposalRisk"
+  | "actionProposalMissingCommand"
+  | "actionProposalExecuting";
 
 interface SessionSummary {
   id: string;
@@ -69,6 +77,27 @@ interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
+  meta?: MessageMeta;
+}
+
+interface MessageMeta {
+  actionProposal?: ActionProposal;
+}
+
+interface ActionProposal {
+  id: string;
+  kind: "hand" | "foot";
+  title: string;
+  reason: string;
+  risk: "low" | "medium" | "high";
+  requiresApproval: boolean;
+  suggestedFootPlan?: {
+    actions?: Array<{
+      command: string;
+      cwd?: string;
+      timeoutMs?: number;
+    }>;
+  };
 }
 
 interface ToolRun {
@@ -101,9 +130,11 @@ interface AppConfig {
 interface AppState {
   sessions: SessionSummary[];
   activeSessionId: string | null;
+  activeSession: SessionDetail | null;
   config: AppConfig | null;
   sending: boolean;
   locale: Locale;
+  actionDialogProposal: { proposal: ActionProposal; messageId: string } | null;
 }
 
 interface ConfigTestResult {
@@ -139,9 +170,11 @@ function qs<T extends Element>(selector: string): T {
 const state: AppState = {
   sessions: [],
   activeSessionId: null,
+  activeSession: null,
   config: null,
   sending: false,
-  locale: initialLocale()
+  locale: initialLocale(),
+  actionDialogProposal: null
 };
 
 const elements = {
@@ -179,7 +212,17 @@ const elements = {
   autoRunReadToolsLabel: qs<HTMLElement>("#autoRunReadToolsLabel"),
   saveSettingsButton: qs<HTMLButtonElement>("#saveSettingsButton"),
   testSettingsButton: qs<HTMLButtonElement>("#testSettingsButton"),
-  settingsTitle: qs<HTMLElement>("#settingsTitle")
+  settingsTitle: qs<HTMLElement>("#settingsTitle"),
+  actionDialog: qs<HTMLDialogElement>("#actionDialog"),
+  actionDialogTitle: qs<HTMLElement>("#actionDialogTitle"),
+  actionDialogSummary: qs<HTMLElement>("#actionDialogSummary"),
+  actionDialogRisk: qs<HTMLElement>("#actionDialogRisk"),
+  actionCommandLabel: qs<HTMLElement>("#actionCommandLabel"),
+  actionDialogCommand: qs<HTMLElement>("#actionDialogCommand"),
+  executeProposalButton: qs<HTMLButtonElement>("#executeProposalButton"),
+  rejectProposalButton: qs<HTMLButtonElement>("#rejectProposalButton"),
+  customProposalButton: qs<HTMLButtonElement>("#customProposalButton"),
+  closeActionDialogButton: qs<HTMLButtonElement>("#closeActionDialogButton")
 };
 
 const messages: Record<Locale, Record<TranslationKey, string>> = {
@@ -238,7 +281,15 @@ const messages: Record<Locale, Record<TranslationKey, string>> = {
     statusRunning: "运行中",
     statusCompleted: "已完成",
     statusFailed: "失败",
-    statusRejected: "已拒绝"
+    statusRejected: "已拒绝",
+    actionProposalDialogTitle: "需要你确认",
+    actionProposalExecute: "批准并执行",
+    actionProposalReject: "暂不执行",
+    actionProposalCustom: "我自己输入",
+    actionProposalCommand: "建议命令",
+    actionProposalRisk: "风险：{risk}",
+    actionProposalMissingCommand: "这条建议没有可执行命令，请自己输入要执行的内容。",
+    actionProposalExecuting: "执行中..."
   },
   "en-US": {
     brandSubtitle: "Local gateway",
@@ -295,7 +346,15 @@ const messages: Record<Locale, Record<TranslationKey, string>> = {
     statusRunning: "Running",
     statusCompleted: "Completed",
     statusFailed: "Failed",
-    statusRejected: "Rejected"
+    statusRejected: "Rejected",
+    actionProposalDialogTitle: "Confirmation needed",
+    actionProposalExecute: "Approve and run",
+    actionProposalReject: "Not now",
+    actionProposalCustom: "I'll type",
+    actionProposalCommand: "Suggested command",
+    actionProposalRisk: "Risk: {risk}",
+    actionProposalMissingCommand: "This proposal does not include an executable command. Type what you want to do instead.",
+    actionProposalExecuting: "Running..."
   }
 };
 
@@ -360,6 +419,32 @@ function displayStatus(status: ToolStatus): string {
     rejected: "statusRejected"
   };
   return t(map[status]);
+}
+
+function proposalCommand(proposal: ActionProposal): { command: string; cwd: string; timeoutMs?: number } | null {
+  const action = proposal.suggestedFootPlan?.actions?.[0];
+  if (!action?.command) return null;
+  return {
+    command: action.command,
+    cwd: action.cwd || ".",
+    timeoutMs: action.timeoutMs
+  };
+}
+
+function proposalDismissKey(proposalId: string): string {
+  return `dax.actionProposal.${proposalId}.dismissed`;
+}
+
+function proposalWasHandled(session: SessionDetail, proposalId: string): boolean {
+  return session.toolRuns.some((run) => run.input?.actionProposalId === proposalId);
+}
+
+function rememberProposalChoice(proposalId: string): void {
+  sessionStorage.setItem(proposalDismissKey(proposalId), "1");
+}
+
+function proposalChoiceRemembered(proposalId: string): boolean {
+  return sessionStorage.getItem(proposalDismissKey(proposalId)) === "1";
 }
 
 /**
@@ -460,11 +545,22 @@ function renderMessages(messages: ChatMessage[]): void {
     return;
   }
   for (const message of messages) {
+    const proposal = message.meta?.actionProposal;
     const item = document.createElement("article");
     item.className = `message ${message.role}`;
     item.innerHTML = `
       <div class="message-role">${escapeHtml(displayRole(message.role))}</div>
       <div class="message-content">${escapeHtml(message.content)}</div>
+      ${
+        proposal
+          ? `<div class="message-actions">
+              <button class="ghost-button compact-button" type="button" data-proposal-action="open" data-proposal-id="${escapeHtml(proposal.id)}">
+                ${escapeHtml(t("actionProposalDialogTitle"))}
+              </button>
+              <span>${escapeHtml(t("actionProposalRisk", { risk: proposal.risk }))}</span>
+            </div>`
+          : ""
+      }
     `;
     elements.messages.append(item);
   }
@@ -509,6 +605,98 @@ function renderTools(toolRuns: ToolRun[]): void {
     `;
     elements.toolList.append(item);
   }
+}
+
+function findProposal(proposalId: string): { proposal: ActionProposal; messageId: string } | null {
+  const message = state.activeSession?.messages.find((item) => item.meta?.actionProposal?.id === proposalId);
+  const proposal = message?.meta?.actionProposal;
+  return proposal && message ? { proposal, messageId: message.id } : null;
+}
+
+function latestUnhandledProposal(session: SessionDetail): { proposal: ActionProposal; messageId: string } | null {
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const message = session.messages[index];
+    if (!message) continue;
+    const proposal = message.meta?.actionProposal;
+    if (
+      proposal &&
+      proposal.requiresApproval &&
+      !proposalWasHandled(session, proposal.id) &&
+      !proposalChoiceRemembered(proposal.id)
+    ) {
+      return { proposal, messageId: message.id };
+    }
+  }
+  return null;
+}
+
+function showActionDialog(proposal: ActionProposal, messageId: string): void {
+  state.actionDialogProposal = { proposal, messageId };
+  const command = proposalCommand(proposal);
+  elements.actionDialogTitle.textContent = proposal.title || t("actionProposalDialogTitle");
+  elements.actionDialogSummary.textContent = proposal.reason || "";
+  elements.actionDialogRisk.textContent = t("actionProposalRisk", { risk: proposal.risk });
+  elements.actionDialogCommand.textContent = command?.command || t("actionProposalMissingCommand");
+  elements.executeProposalButton.disabled = !command;
+  elements.executeProposalButton.textContent = t("actionProposalExecute");
+  elements.rejectProposalButton.textContent = t("actionProposalReject");
+  elements.customProposalButton.textContent = t("actionProposalCustom");
+  if (!elements.actionDialog.open) {
+    elements.actionDialog.show();
+  }
+}
+
+function closeActionDialog(): void {
+  elements.actionDialog.close();
+  state.actionDialogProposal = null;
+}
+
+async function executeActiveProposal(): Promise<void> {
+  const active = state.actionDialogProposal;
+  if (!active || !state.activeSessionId) return;
+  const command = proposalCommand(active.proposal);
+  if (!command) {
+    alert(t("actionProposalMissingCommand"));
+    elements.messageInput.focus();
+    return;
+  }
+  elements.executeProposalButton.disabled = true;
+  elements.executeProposalButton.textContent = t("actionProposalExecuting");
+  try {
+    await api(`/api/sessions/${state.activeSessionId}/action-proposals/${active.proposal.id}/execute`, {
+      method: "POST",
+      body: JSON.stringify({
+        messageId: active.messageId,
+        title: active.proposal.title,
+        command: command.command,
+        cwd: command.cwd,
+        timeoutMs: command.timeoutMs,
+        locale: state.locale
+      })
+    });
+    rememberProposalChoice(active.proposal.id);
+    closeActionDialog();
+    await loadSessions();
+    await openSession(state.activeSessionId);
+  } catch (error) {
+    alert(error instanceof Error ? error.message : String(error));
+  } finally {
+    elements.executeProposalButton.disabled = false;
+    elements.executeProposalButton.textContent = t("actionProposalExecute");
+  }
+}
+
+function rejectActiveProposal(): void {
+  const active = state.actionDialogProposal;
+  if (active) rememberProposalChoice(active.proposal.id);
+  closeActionDialog();
+}
+
+function customInputForActiveProposal(): void {
+  const active = state.actionDialogProposal;
+  if (active) rememberProposalChoice(active.proposal.id);
+  closeActionDialog();
+  elements.messageInput.focus();
 }
 
 /**
@@ -679,9 +867,14 @@ async function openSession(sessionId: string): Promise<void> {
   state.activeSessionId = sessionId;
   renderSessions();
   const session = await api<SessionDetail>(`/api/sessions/${sessionId}`);
+  state.activeSession = session;
   elements.sessionTitle.textContent = displayTitle(session.title);
   renderMessages(session.messages);
   renderTools(session.toolRuns.slice().reverse());
+  const proposal = latestUnhandledProposal(session);
+  if (proposal) {
+    showActionDialog(proposal.proposal, proposal.messageId);
+  }
 }
 
 /**
@@ -774,7 +967,13 @@ function applyLocale(): void {
   elements.testSettingsButton.textContent = t("testConnection");
   elements.saveSettingsButton.textContent = t("saveSettings");
   elements.settingsTitle.textContent = t("settings");
+  elements.actionDialogTitle.textContent = t("actionProposalDialogTitle");
+  elements.actionCommandLabel.textContent = t("actionProposalCommand");
+  elements.executeProposalButton.textContent = t("actionProposalExecute");
+  elements.rejectProposalButton.textContent = t("actionProposalReject");
+  elements.customProposalButton.textContent = t("actionProposalCustom");
   elements.closeSettingsButton.setAttribute("aria-label", t("close"));
+  elements.closeActionDialogButton.setAttribute("aria-label", t("close"));
   elements.languageInput.setAttribute("aria-label", t("languageLabel"));
   elements.languageInput.value = state.locale;
   updateProviderFields();
@@ -806,6 +1005,15 @@ async function handleToolClick(event: MouseEvent): Promise<void> {
   } catch (error) {
     alert(error instanceof Error ? error.message : String(error));
   }
+}
+
+function handleMessageClick(event: MouseEvent): void {
+  const target = event.target instanceof Element ? event.target : null;
+  const button = target?.closest<HTMLButtonElement>("button[data-proposal-action]");
+  const proposalId = button?.dataset.proposalId;
+  if (!proposalId) return;
+  const found = findProposal(proposalId);
+  if (found) showActionDialog(found.proposal, found.messageId);
 }
 
 /**
@@ -870,6 +1078,11 @@ elements.newSessionButton.addEventListener("click", createNewSession);
 elements.refreshButton.addEventListener("click", refreshActive);
 elements.composer.addEventListener("submit", sendMessage);
 elements.toolList.addEventListener("click", handleToolClick);
+elements.messages.addEventListener("click", handleMessageClick);
+elements.executeProposalButton.addEventListener("click", executeActiveProposal);
+elements.rejectProposalButton.addEventListener("click", rejectActiveProposal);
+elements.customProposalButton.addEventListener("click", customInputForActiveProposal);
+elements.closeActionDialogButton.addEventListener("click", rejectActiveProposal);
 elements.settingsButton.addEventListener("click", () => {
   applyConfigToForm();
   setSettingsFeedback(elements.providerInput.value === "echo" ? t("echoNotExternal") : "");

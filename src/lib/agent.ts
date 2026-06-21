@@ -9,7 +9,7 @@ import {
 } from "./store.js";
 import { createAgentCoreInput, decideNextStep, recordAgentCoreFailure } from "./core.js";
 import { executeAndRecordReadPlan } from "./read.js";
-import { executeTool, getTool } from "./tools.js";
+import { executeTool, executeToolRun, getTool } from "./tools.js";
 import { analyzeAndRecordUserText } from "./listen.js";
 import {
   createAndRecordSpeakInteraction,
@@ -17,6 +17,7 @@ import {
   createSpeakResult
 } from "./speak.js";
 import type {
+  ActionProposal,
   AgentCoreResult,
   ContextBlock,
   JsonObject,
@@ -228,6 +229,52 @@ function parseSlashCommand(content: string): SlashCommand | null {
   }
 }
 
+function actionProposalReplyIntent(content: string): "approve" | "reject" | null {
+  const text = content.trim().toLowerCase();
+  if (/^(需要|可以|执行|确认|同意|批准|好|好的|开始|yes|y|ok|approve|run|execute)$/i.test(text)) {
+    return "approve";
+  }
+  if (/^(不要|不用|取消|否|不需要|先不|no|n|reject|cancel|stop)$/i.test(text)) {
+    return "reject";
+  }
+  return null;
+}
+
+function storedActionProposal(value: unknown): ActionProposal | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const proposal = value as Partial<ActionProposal>;
+  return typeof proposal.id === "string" &&
+    (proposal.kind === "foot" || proposal.kind === "hand") &&
+    typeof proposal.title === "string"
+    ? (proposal as ActionProposal)
+    : null;
+}
+
+function latestActionProposal(messages: Message[]): { proposal: ActionProposal; message: Message } | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant") continue;
+    const proposal = storedActionProposal(message.meta?.actionProposal);
+    if (proposal) return { proposal, message };
+  }
+  return null;
+}
+
+function commandFromActionProposal(proposal: ActionProposal): {
+  command: string;
+  cwd: string;
+  timeoutMs?: number;
+} | null {
+  if (proposal.kind !== "foot") return null;
+  const action = proposal.suggestedFootPlan?.actions?.[0];
+  if (!action?.command) return null;
+  return {
+    command: action.command,
+    cwd: action.cwd || ".",
+    timeoutMs: action.timeoutMs
+  };
+}
+
 /**
  * 使用方法：处理 `/help` 时传入 locale，返回可以交给嘴巴能力的 Markdown 文本。
  * 作用：集中维护中英文内置命令说明。
@@ -371,6 +418,101 @@ async function handleSlash(
  * @param content 用户在当前会话中发送的原始消息正文。
  * @param locale 本轮消息使用的界面语言，默认使用中文。
  */
+async function handleActionProposalReply(
+  sessionId: string,
+  userMessage: Message,
+  content: string,
+  locale: Locale,
+  recentMessages: Message[]
+): Promise<(AssistantMessageWithSpeak & { toolRuns: (ToolRun | null)[] }) | null> {
+  const intent = actionProposalReplyIntent(content);
+  if (!intent) return null;
+  const latest = latestActionProposal(recentMessages);
+  if (!latest) return null;
+
+  if (intent === "reject") {
+    const spoken = await addSpokenAssistantMessage(
+      sessionId,
+      isZh(locale)
+        ? `好的，本次不会执行“${latest.proposal.title}”。你可以继续输入新的需求或命令。`
+        : `Understood. I will not execute "${latest.proposal.title}". You can continue with a new request or command.`,
+      locale,
+      {
+        mode: "acknowledge",
+        sourceRefs: [{ kind: "inference", id: latest.proposal.id, label: latest.proposal.title }],
+        meta: {
+          source: "action-proposal-reply",
+          actionProposalId: latest.proposal.id,
+          actionProposalStatus: "rejected"
+        }
+      }
+    );
+    return { ...spoken, toolRuns: [] };
+  }
+
+  const command = commandFromActionProposal(latest.proposal);
+  if (!command) {
+    const spoken = await addSpokenAssistantMessage(
+      sessionId,
+      isZh(locale)
+        ? `我找到了上一条动作建议“${latest.proposal.title}”，但里面没有可执行命令。你可以点“我自己输入”，或者使用 /run 明确写出要运行的命令。`
+        : `I found the previous action proposal "${latest.proposal.title}", but it does not contain an executable command. Use the custom input option, or write an explicit /run command.`,
+      locale,
+      {
+        mode: "warn",
+        sourceRefs: [{ kind: "inference", id: latest.proposal.id, label: latest.proposal.title }],
+        riskFlags: ["action_proposal_missing_command"],
+        meta: {
+          source: "action-proposal-reply",
+          actionProposalId: latest.proposal.id,
+          actionProposalStatus: "missing_command"
+        }
+      }
+    );
+    return { ...spoken, toolRuns: [] };
+  }
+
+  const input: JsonObject = {
+    command: command.command,
+    cwd: command.cwd,
+    actionProposalId: latest.proposal.id,
+    actionProposalTitle: latest.proposal.title
+  };
+  if (command.timeoutMs) input.timeoutMs = command.timeoutMs;
+  const run = await createToolRun(sessionId, userMessage.id, "shell.run", input, true);
+  await updateToolRun(
+    run.id,
+    { status: "approved", approvedAt: new Date().toISOString() },
+    "tool.approved"
+  );
+  const completed = await executeToolRun(run.id);
+  const output = completed?.output || completed?.error || "";
+  const succeeded = completed?.status === "completed";
+  const spoken = await addSpokenAssistantMessage(
+    sessionId,
+    isZh(locale)
+      ? `${succeeded ? "已按你的确认执行建议命令。" : "已按你的确认尝试执行建议命令，但执行未成功。"}\n\n${output}`
+      : `${succeeded ? "I executed the proposed command after your confirmation." : "I tried to execute the proposed command after your confirmation, but it did not succeed."}\n\n${output}`,
+    locale,
+    {
+      mode: succeeded ? "report" : "warn",
+      contentTypes: ["markdown"],
+      sourceRefs: [
+        { kind: "inference", id: latest.proposal.id, label: latest.proposal.title },
+        { kind: "tool_result", id: completed?.id || run.id, label: "shell.run" }
+      ],
+      riskFlags: succeeded ? [] : ["tool_run_failed"],
+      meta: {
+        source: "action-proposal-reply",
+        actionProposalId: latest.proposal.id,
+        actionProposalStatus: succeeded ? "executed" : "failed",
+        toolRunId: completed?.id || run.id
+      }
+    }
+  );
+  return { ...spoken, toolRuns: [completed || run] };
+}
+
 export async function processUserMessage(
   sessionId: string,
   content: string,
@@ -407,6 +549,29 @@ export async function processUserMessage(
       speakPlan: slashResult.speakPlan,
       speakMessage: slashResult.speakMessage,
       speakResult: slashResult.speakResult,
+      agentCoreResults: [],
+      contextBlocks: [],
+      readResults: []
+    };
+  }
+
+  const proposalReplyResult = await handleActionProposalReply(
+    sessionId,
+    userMessage,
+    content,
+    locale,
+    recentBeforeListen
+  );
+  if (proposalReplyResult) {
+    return {
+      userMessage,
+      assistantMessage: proposalReplyResult.message,
+      toolRuns: proposalReplyResult.toolRuns,
+      listenEvent: listenAnalysis.event,
+      listenResult: listenAnalysis.result,
+      speakPlan: proposalReplyResult.speakPlan,
+      speakMessage: proposalReplyResult.speakMessage,
+      speakResult: proposalReplyResult.speakResult,
       agentCoreResults: [],
       contextBlocks: [],
       readResults: []
@@ -505,6 +670,9 @@ export async function processUserMessage(
           capability: finalResult.route.capability,
           routeMode: finalResult.route.mode,
           actionProposalId: finalResult.decision.actionProposal?.id || "",
+          ...(finalResult.decision.actionProposal
+            ? { actionProposal: finalResult.decision.actionProposal }
+            : {}),
           memoryDecisionId: finalResult.decision.memoryDecision?.id || "",
           contextBlockIds: contextBlocks.map((block) => block.id)
         }

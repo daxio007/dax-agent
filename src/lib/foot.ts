@@ -690,6 +690,24 @@ function didCommandTimeOut(error: ExecError | null): boolean {
   return Boolean(error.killed && /timed out|timeout/i.test(error.message || ""));
 }
 
+function commandEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const fallbackPath = [
+    "C:\\Program Files\\nodejs",
+    "C:\\Windows\\System32",
+    "C:\\Windows",
+    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0"
+  ].join(";");
+  const pathValue = env.Path || env.PATH || fallbackPath;
+  if (process.platform === "win32") {
+    delete env.PATH;
+    env.Path = pathValue.includes("C:\\Windows\\System32") ? pathValue : `${pathValue};${fallbackPath}`;
+  } else {
+    env.PATH = pathValue;
+  }
+  return env;
+}
+
 /**
  * 运行一个已经通过策略校验的命令。
  *
@@ -715,7 +733,8 @@ async function runFootCommand(resolved: ResolvedFootAction): Promise<FootCommand
         cwd: resolved.absoluteCwd,
         timeout: resolved.timeoutMs,
         windowsHide: true,
-        maxBuffer: EXEC_MAX_BUFFER
+        maxBuffer: EXEC_MAX_BUFFER,
+        env: commandEnvironment()
       },
       (error, stdout, stderr) => {
         const execError = error as ExecError | null;

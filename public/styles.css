@@ -258,6 +258,23 @@ button {
   line-height: 1.5;
 }
 
+.message-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.compact-button {
+  padding: 7px 9px;
+  min-height: 34px;
+  font-size: 12px;
+}
+
 .composer {
   border-top: 1px solid var(--line);
   background: var(--panel-strong);
@@ -413,6 +430,51 @@ button {
   width: min(520px, calc(100vw - 28px));
 }
 
+.action-dialog {
+  position: fixed;
+  inset: auto 24px 96px auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 0;
+  width: min(520px, calc(100vw - 32px));
+  background: var(--panel-strong);
+}
+
+.action-dialog-inner {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.action-summary {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.action-risk,
+.action-command-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.action-command {
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f7f4ec;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  max-height: 160px;
+}
+
 .settings-dialog::backdrop {
   background: rgba(31, 28, 24, 0.36);
 }
@@ -554,5 +616,15 @@ button {
 
   .send-button {
     width: 100%;
+  }
+
+  .action-dialog {
+    inset: auto 12px 12px 12px;
+    width: auto;
+  }
+
+  .action-dialog .dialog-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { loadConfig, maskConfig, saveLocalConfig } from "./lib/config.js";
 import {
   createSession,
+  createToolRun,
   deleteSession,
   getRecentMessages,
   getSession,
@@ -1123,6 +1124,37 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
 
     if (method === "DELETE" && parts.length === 3) {
       sendJson(res, 200, { deleted: await deleteSession(sessionId) });
+      return;
+    }
+
+    if (method === "POST" && parts[3] === "action-proposals" && parts[4] && parts[5] === "execute") {
+      const proposalId = parts[4];
+      const body = await readBody(req);
+      const command = optionalString(body.command);
+      if (!command) {
+        throw createHttpError("Action proposal execution requires a command.");
+      }
+      const input: JsonObject = {
+        command,
+        cwd: optionalString(body.cwd) || ".",
+        actionProposalId: proposalId,
+        actionProposalTitle: optionalString(body.title) || proposalId
+      };
+      const timeoutMs = optionalPositiveNumber(body.timeoutMs);
+      if (timeoutMs) input.timeoutMs = timeoutMs;
+      const run = await createToolRun(
+        sessionId,
+        optionalString(body.messageId) || `proposal:${proposalId}`,
+        "shell.run",
+        input,
+        true
+      );
+      await updateToolRun(
+        run.id,
+        { status: "approved", approvedAt: new Date().toISOString() },
+        "tool.approved"
+      );
+      sendJson(res, 200, await executeToolRun(run.id));
       return;
     }
 

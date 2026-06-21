@@ -658,6 +658,10 @@ export interface AgentDecisionCandidate {
   actionTitle?: string;
   actionReason?: string;
   actionRisk?: AgentRiskLevel;
+  actionCommand?: string;
+  actionCwd?: string;
+  actionTimeoutMs?: number;
+  actionExpectedEffect?: string;
 }
 
 export interface ModelReasoningInput {
