@@ -1,6 +1,7 @@
 import { newId, nowIso } from "./ids.js";
 import { createReadSource } from "./read.js";
 import { recordListenAnalysis } from "./store.js";
+import { getRuntimeTimeContext, localDateSearchLabel } from "./time.js";
 import type {
   JsonObject,
   ListenConstraint,
@@ -805,7 +806,11 @@ function detectContextNeeds(
   const needs: ListenContextNeed[] = [];
   const explicitUrl = extractFirstUrl(text);
   const asksSearchCapability = isWebSearchCapabilityQuestion(text);
-  const requestsWebResearch = !asksSearchCapability && !explicitUrl && isWebResearchRequest(text);
+  const asksCurrentHoliday = isCurrentHolidayQuestion(text);
+  const requestsWebResearch =
+    !asksSearchCapability &&
+    !explicitUrl &&
+    (asksCurrentHoliday || isWebResearchRequest(text));
   const needsWorkspace = /项目|代码|实现|开发|提交|构建|build|workspace|code/i.test(text);
   const needsMemory = /继续|下一步|刚才|之前|项目记忆|路线图|根据(?:这个|上述|现有)文档|按这个/i.test(text);
   if (!requestsWebResearch && (needsMemory || primaryIntent === "continue")) {
@@ -820,7 +825,15 @@ function detectContextNeeds(
   if (explicitUrl) {
     addContextNeed(needs, "web_page", "User provided a specific web page to read.", explicitUrl, true);
   } else if (requestsWebResearch) {
-    addContextNeed(needs, "web_search", "User requested public web search and page reading.", extractWebSearchQuery(text), true);
+    addContextNeed(
+      needs,
+      "web_search",
+      asksCurrentHoliday
+        ? "Current holiday information must be verified using the exact runtime date."
+        : "User requested public web search and page reading.",
+      asksCurrentHoliday ? currentHolidaySearchQuery() : extractWebSearchQuery(text),
+      true
+    );
   }
   if (/电脑配置|系统配置|node|npm|环境变量|本机|配置/i.test(text)) {
     addContextNeed(needs, "computer_config", "User referred to local computer or runtime configuration.", "system", false);
@@ -846,6 +859,17 @@ function isWebSearchCapabilityQuestion(text: string): boolean {
 function isWebResearchRequest(text: string): boolean {
   return /网上|联网|上网|搜索|搜一下|查找|调研|所有文章|网页|网站|web|online|search/i.test(text) ||
     /(?:看看|查阅|阅读|研究|了解)\s*[^，。！？?]{1,120}?(?:相关)?(?:文档|资料|文章|内容)/i.test(text);
+}
+
+function isCurrentHolidayQuestion(text: string): boolean {
+  return /(?:今天|今日|当天|现在).{0,8}(?:是什么|有(?:什么|哪些)?|过什么)?(?:节日|纪念日|日子)|(?:今天|今日).{0,4}什么日子/i.test(
+    text
+  );
+}
+
+function currentHolidaySearchQuery(): string {
+  const context = getRuntimeTimeContext("zh-CN");
+  return `${localDateSearchLabel(context)} ${context.weekday} 节日 纪念日 中国 国际`;
 }
 
 /**

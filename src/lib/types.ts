@@ -668,6 +668,13 @@ export interface AgentDecisionCandidate {
 
 export interface ModelReasoningInput {
   locale: Locale;
+  currentTime: {
+    isoUtc: string;
+    localDate: string;
+    localDateTime: string;
+    weekday: string;
+    timeZone: string;
+  };
   userText: string;
   listenSummary: string;
   workingMemorySummary: string;

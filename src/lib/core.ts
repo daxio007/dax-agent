@@ -3,6 +3,7 @@ import { suggestReadSourcesFromListenResult } from "./listen.js";
 import { completeChat } from "./providers.js";
 import { createReadPlan } from "./read.js";
 import { createSpeakPlan } from "./speak.js";
+import { calendarObservances, getRuntimeTimeContext, localDateSearchLabel } from "./time.js";
 import {
   recordAgentCoreFailure as persistAgentCoreFailure,
   recordAgentCoreResult as persistAgentCoreResult
@@ -191,6 +192,38 @@ export function applyHardControl(
   _memory: WorkingMemory
 ): AgentDecision | null {
   const changes = input.listenResult.stateChanges;
+  if (isCurrentHolidayQuestion(input.userText)) {
+    const current = getRuntimeTimeContext(String(input.locale || "zh-CN"));
+    const observances = calendarObservances(current);
+    if (observances.length) {
+      const names = observances.map((item) =>
+        isZh(input.locale)
+          ? `${item.nameZh}（${item.reasonZh}）`
+          : `${item.nameEn} (${item.reasonEn})`
+      );
+      return createDecision(input, {
+        type: "answer_directly",
+        source: "rule",
+        reason: "The runtime calendar deterministically matched known observances for the current local date.",
+        confidence: 1,
+        userVisibleSummary: isZh(input.locale)
+          ? `今天是 ${localDateSearchLabel(current)}，${current.weekday}。今天是${names.join("，也是")}。`
+          : `Today is ${current.localDate}, ${current.weekday}. It is ${names.join(" and ")}.`
+      });
+    }
+  }
+  if (isCurrentDateQuestion(input.userText) && !isCurrentHolidayQuestion(input.userText)) {
+    const current = getRuntimeTimeContext(String(input.locale || "zh-CN"));
+    return createDecision(input, {
+      type: "answer_directly",
+      source: "rule",
+      reason: "The user asked for the current date or weekday, which must come from the runtime clock.",
+      confidence: 1,
+      userVisibleSummary: isZh(input.locale)
+        ? `现在是 ${localDateSearchLabel(current)}，${current.weekday}，时区 ${current.timeZone}。`
+        : `It is ${current.localDate}, ${current.weekday}, in the ${current.timeZone} time zone.`
+    });
+  }
   if (isWebSearchCapabilityQuestion(input.userText)) {
     return createDecision(input, {
       type: "answer_directly",
@@ -301,6 +334,16 @@ function isWebSearchCapabilityQuestion(text: string): boolean {
   );
 }
 
+function isCurrentDateQuestion(text: string): boolean {
+  return /今天|今日|现在|当前日期|几月几日|星期几|周几|what(?:'s| is) (?:the )?date|what day is it/i.test(text);
+}
+
+function isCurrentHolidayQuestion(text: string): boolean {
+  return /(?:今天|今日|当天|现在).{0,8}(?:是什么|有(?:什么|哪些)?|过什么)?(?:节日|纪念日|日子)|(?:今天|今日).{0,4}什么日子/i.test(
+    text
+  );
+}
+
 /**
  * 使用方法：在 hard control 没有直接给出决策后调用。
  * 作用：根据 ListenResult.contextNeeds、是否已经读过和当前 ContextBlock 判断是否应进入一次 read round。
@@ -359,8 +402,10 @@ export function buildModelReasoningInput(
   input: AgentCoreInput,
   memory: WorkingMemory
 ): ModelReasoningInput {
+  const currentTime = getRuntimeTimeContext(String(input.locale || "zh-CN"));
   return {
     locale: input.locale,
+    currentTime,
     userText: cleanText(input.userText, 3000),
     listenSummary: summarizeListenResult(input),
     workingMemorySummary: cleanText(
@@ -1347,6 +1392,7 @@ function modelReasoningSystemPrompt(allowedTypes: AgentDecisionType[]): string {
     "Return exactly one JSON object and no markdown.",
     `Allowed type values: ${allowedTypes.join(", ")}.`,
     "Required fields: type, reason, confidence, userVisibleSummary.",
+    "The user payload includes currentTime from the host runtime. Treat it as authoritative for today's date, weekday, year, and time zone. Never infer the current date from training data.",
     "userVisibleSummary must be a complete response suitable for the user.",
     "Optional fields: memoryKind, memoryValue, skillQuery, actionTitle, actionReason, actionRisk.",
     "For propose_foot_action, include actionCommand when you know the concrete safe command; optional actionCwd, actionTimeoutMs, and actionExpectedEffect may also be included.",
