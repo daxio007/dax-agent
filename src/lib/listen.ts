@@ -803,21 +803,23 @@ function detectContextNeeds(
   references: ListenReference[]
 ): ListenContextNeed[] {
   const needs: ListenContextNeed[] = [];
+  const explicitUrl = extractFirstUrl(text);
+  const asksSearchCapability = isWebSearchCapabilityQuestion(text);
+  const requestsWebResearch = !asksSearchCapability && !explicitUrl && isWebResearchRequest(text);
   const needsWorkspace = /项目|代码|实现|开发|提交|构建|build|workspace|code/i.test(text);
-  const needsMemory = /继续|下一步|刚才|之前|项目记忆|路线图|文档|根据文档|按这个/i.test(text);
-  if (needsMemory || primaryIntent === "continue") {
+  const needsMemory = /继续|下一步|刚才|之前|项目记忆|路线图|根据(?:这个|上述|现有)文档|按这个/i.test(text);
+  if (!requestsWebResearch && (needsMemory || primaryIntent === "continue")) {
     addContextNeed(needs, "memory", "Need project memory or recent conversation context.", "docs/project-memory.md", true);
   }
   if (needsWorkspace || ["implement", "commit", "push", "review", "inspect", "read"].includes(primaryIntent)) {
     addContextNeed(needs, "workspace", "Need current workspace structure or files.", ".", true);
   }
-  if (/文档|资料|pdf|word|markdown|readme/i.test(text)) {
+  if (!requestsWebResearch && /本地文档|项目文档|仓库文档|工作区文档|pdf|word|markdown|readme/i.test(text)) {
     addContextNeed(needs, "document", "User referred to documents that may need reading.", "docs", true);
   }
-  const explicitUrl = extractFirstUrl(text);
   if (explicitUrl) {
     addContextNeed(needs, "web_page", "User provided a specific web page to read.", explicitUrl, true);
-  } else if (/网上|联网|搜索|搜一下|查找|调研|所有文章|网页|网站|web|online|search/i.test(text)) {
+  } else if (requestsWebResearch) {
     addContextNeed(needs, "web_search", "User requested public web search and page reading.", extractWebSearchQuery(text), true);
   }
   if (/电脑配置|系统配置|node|npm|环境变量|本机|配置/i.test(text)) {
@@ -833,6 +835,17 @@ function detectContextNeeds(
     addContextNeed(needs, "none", "No extra context is required for this input.", undefined, false);
   }
   return dedupeBy(needs, (need) => `${need.kind}:${need.suggestedTarget || ""}`);
+}
+
+function isWebSearchCapabilityQuestion(text: string): boolean {
+  return /(?:有没有|没有|具备|支持|能不能|可以|是否有).{0,12}(?:直接)?(?:联网|上网|网络)?搜索.{0,12}(?:能力|功能)?|只能.{0,12}(?:发|给).{0,8}(?:链接|网址)|搜索.{0,8}(?:能力|功能)/i.test(
+    text
+  );
+}
+
+function isWebResearchRequest(text: string): boolean {
+  return /网上|联网|上网|搜索|搜一下|查找|调研|所有文章|网页|网站|web|online|search/i.test(text) ||
+    /(?:看看|查阅|阅读|研究|了解)\s*[^，。！？?]{1,120}?(?:相关)?(?:文档|资料|文章|内容)/i.test(text);
 }
 
 /**
@@ -1101,17 +1114,26 @@ function defaultReadTargetForNeed(kind: ListenContextNeed["kind"]): string {
 }
 
 function extractWebSearchQuery(text: string): string {
+  const relatedDocs = text.match(
+    /(?:看看|查阅|阅读|研究|了解)\s*([^，。！？?]{2,120}?)(?:的)?相关(?:文档|资料|文章|内容)/i
+  )?.[1]?.trim();
+  if (relatedDocs) return cleanWebSearchQuery(relatedDocs);
   const about = text.match(/关于\s*([^？?，,。；;]{2,120})/i)?.[1]?.trim();
   if (about) {
-    const cleaned = about
-      .replace(/(?:的)?(?:所有)?(?:文章|资料|内容).*$/i, "")
-      .replace(/[吗呢吧啊呀]+$/i, "")
-      .trim();
+    const cleaned = cleanWebSearchQuery(about.replace(/(?:的)?(?:所有)?(?:文章|资料|内容).*$/i, ""));
     return cleaned || about;
   }
   const request = text.match(/(?:搜索|搜一下|查找|调研)\s*([^？?，,。；;]{2,120})/i)?.[1]?.trim();
-  if (request) return request.replace(/[吗呢吧啊呀]+$/i, "").trim();
-  return text.replace(/https?:\/\/\S+/gi, "").replace(/\s+/g, " ").trim().slice(0, 180);
+  if (request) return cleanWebSearchQuery(request);
+  return cleanWebSearchQuery(text.replace(/https?:\/\/\S+/gi, "")).slice(0, 180);
+}
+
+function cleanWebSearchQuery(text: string): string {
+  return text
+    .replace(/^(?:你|我|要不你|请你|帮我)\s*/i, "")
+    .replace(/[吗呢吧啊呀]+$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**

@@ -191,6 +191,32 @@ export function applyHardControl(
   _memory: WorkingMemory
 ): AgentDecision | null {
   const changes = input.listenResult.stateChanges;
+  if (isWebSearchCapabilityQuestion(input.userText)) {
+    return createDecision(input, {
+      type: "answer_directly",
+      source: "rule",
+      reason: "The user asked whether the current runtime can search the public web.",
+      confidence: 1,
+      userVisibleSummary: isZh(input.locale)
+        ? "可以。我已经具备直接搜索公开网页的能力，会先通过 Web Search MCP 找到结果，再用 Browser MCP 打开相关页面阅读和总结。你不需要先提供链接，直接告诉我想搜索的主题即可。"
+        : "Yes. I can search the public web through the Web Search MCP, then open relevant pages with the Browser MCP to read and summarize them. You do not need to provide a URL first; just give me the topic."
+    });
+  }
+
+  const failedWebNeed = input.listenResult.contextNeeds.find(
+    (need) => need.kind === "web_search" || need.kind === "web_page"
+  );
+  if (input.readFailure && failedWebNeed) {
+    return createDecision(input, {
+      type: "ask_user",
+      source: "rule",
+      reason: `The web capability is available, but this specific read failed: ${input.readFailure}`,
+      confidence: 0.98,
+      userVisibleSummary: isZh(input.locale)
+        ? `搜索功能是可用的，但这一次检索“${failedWebNeed.suggestedTarget || input.userText}”没有拿到有效结果：${cleanText(input.readFailure, 300)}。你可以换一个更具体的关键词，我也可以根据当前对话主题自动调整关键词后重试。`
+        : `Web search is available, but this search for "${failedWebNeed.suggestedTarget || input.userText}" did not return a usable result: ${cleanText(input.readFailure, 300)}. Try a more specific query, or I can refine it from the current conversation and retry.`
+    });
+  }
   if (changes.some((change) => change.kind === "stop") || input.listenResult.primaryIntent === "stop") {
     return createDecision(input, {
       type: "stop",
@@ -267,6 +293,12 @@ export function applyHardControl(
   }
 
   return null;
+}
+
+function isWebSearchCapabilityQuestion(text: string): boolean {
+  return /(?:有没有|没有|具备|支持|能不能|可以|是否有).{0,12}(?:直接)?(?:联网|上网|网络)?搜索.{0,12}(?:能力|功能)?|只能.{0,12}(?:发|给).{0,8}(?:链接|网址)|搜索.{0,8}(?:能力|功能)/i.test(
+    text
+  );
 }
 
 /**
