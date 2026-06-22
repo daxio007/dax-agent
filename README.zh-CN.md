@@ -97,6 +97,18 @@ Web 控制台现在支持中文和英文界面：
 
 这个项目目前是一个小而可检查的基础版本。之后可以继续增加更多 Channel、更丰富的 Skill、定时任务，以及移动端或 IM 桥接能力。
 
+## 开发检查
+
+所有 TypeScript 命名方法都必须有 JSDoc，并明确说明“使用方法”和“作用”。详细规则见 `docs/jsdoc-standard.md`。
+
+提交源码改动前运行：
+
+```bash
+npm run check:jsdoc
+npm run typecheck
+npm run build
+```
+
 ## 项目记忆
 
 重要讨论、设计说明和决策记录保存在 `docs/`：
@@ -118,6 +130,7 @@ Web 控制台现在支持中文和英文界面：
 - `docs/read-capability-implementation.md`
 - `docs/listen-capability-implementation.md`
 - `docs/speak-capability-implementation.md`
+- `docs/jsdoc-standard.md`
 - `docs/decision-log.md`
 - `docs/roadmap.md`
 - `docs/conversation-log.md`

@@ -6,6 +6,7 @@
   "description": "A local-first personal AI agent gateway inspired by OpenClaw.",
   "scripts": {
     "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.web.json",
+    "check:jsdoc": "node scripts/check-jsdoc.mjs",
     "dev": "npm run build && node dist/server.js --dev",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit"

@@ -110,6 +110,11 @@ interface HttpError extends Error {
   statusCode?: number;
 }
 
+/**
+ * 使用方法：服务启动时传入 process.argv。
+ * 作用：解析 `--port` 等受支持命令行参数形成应用配置覆盖。
+ * 边界：未知参数会被忽略，不读取环境变量或配置文件。
+ */
 function parseArgs(argv: string[]): DeepPartial<AppConfig["app"]> {
   const args: DeepPartial<AppConfig["app"]> = {};
   for (let index = 2; index < argv.length; index += 1) {
@@ -121,6 +126,11 @@ function parseArgs(argv: string[]): DeepPartial<AppConfig["app"]> {
   return args;
 }
 
+/**
+ * 使用方法：API 路由完成后传入响应对象、状态码和 payload。
+ * 作用：统一序列化格式、UTF-8 Content-Type 和 Content-Length。
+ * 边界：不会自动脱敏 payload；配置等敏感对象必须在调用前处理。
+ */
 function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(status, {
@@ -130,6 +140,11 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   res.end(body);
 }
 
+/**
+ * 使用方法：静态文件路由返回纯文本错误时调用。
+ * 作用：统一发送 UTF-8 文本响应和 Content-Length。
+ * 边界：不做 HTML 转义，不应用于输出不可信 HTML。
+ */
 function sendText(res: ServerResponse, status: number, text: string): void {
   res.writeHead(status, {
     "Content-Type": "text/plain; charset=utf-8",
@@ -138,6 +153,11 @@ function sendText(res: ServerResponse, status: number, text: string): void {
   res.end(text);
 }
 
+/**
+ * 使用方法：PUT/POST API 需要 JSON body 时传入 IncomingMessage。
+ * 作用：收集请求流、解析 JSON，并把空 body 视为空对象。
+ * 边界：只接受可解析 JSON；不处理 multipart、表单或超大请求限流。
+ */
 async function readBody(req: IncomingMessage): Promise<JsonObject> {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -859,6 +879,11 @@ async function decideAgentCoreFromBody(body: JsonObject): Promise<JsonObject> {
   }
 }
 
+/**
+ * 使用方法：非 `/api/` 请求由 handleRequest() 转交。
+ * 作用：安全解析 public 目录内路径并返回静态文件及 MIME。
+ * 边界：拒绝路径逃逸，不提供目录浏览或缓存版本管理。
+ */
 async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost");
   const unsafePath = decodeURIComponent(url.pathname);
@@ -892,6 +917,11 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<v
   }
 }
 
+/**
+ * 使用方法：handleRequest() 收到 `/api/` 请求后调用。
+ * 作用：集中路由配置、会话、读听说、手脚、Agent Core、工具和审计 API。
+ * 边界：只负责 HTTP 编排；业务安全规则仍由对应能力模块执行。
+ */
 async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost");
   const method = req.method || "GET";
@@ -1295,6 +1325,11 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
   sendJson(res, 404, { error: "Not found." });
 }
 
+/**
+ * 使用方法：Node HTTP server 对每个请求调用。
+ * 作用：区分 API 与静态资源，并把异常转换成统一 JSON 错误。
+ * 边界：这是最外层错误边界，不应吞掉已经需要写入审计的业务失败。
+ */
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     if (req.url?.startsWith("/api/")) {

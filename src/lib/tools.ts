@@ -34,15 +34,30 @@ export const toolManifest: ToolDefinition[] = [
   }
 ];
 
+/**
+ * 使用方法：根据模型路由或 slash command 的工具名称查询 manifest。
+ * 作用：返回匹配的 ToolDefinition，供审批和执行流程检查。
+ * 边界：未知工具返回 null，不进行模糊匹配。
+ */
 export function getTool(name: string): ToolDefinition | null {
   return toolManifest.find((tool) => tool.name === name) || null;
 }
 
+/**
+ * 使用方法：工具实现从 JsonObject 读取 path、query、command 等字符串字段时调用。
+ * 作用：只接受字符串并过滤空值。
+ * 边界：不做路径解析、命令验证或类型转换。
+ */
 function stringInput(input: JsonObject, key: string): string | undefined {
   const value = input[key];
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * 使用方法：workspace list/read/search 处理用户目标路径前调用。
+ * 作用：解析绝对路径并确认目标没有逃出 workspace。
+ * 边界：只保护路径边界，不检查文件内容、权限或符号链接的外部语义。
+ */
 function ensureInsideWorkspace(target: string | undefined, workspace: string): string {
   const resolved = path.resolve(workspace, target || ".");
   const relative = path.relative(workspace, resolved);
@@ -52,6 +67,11 @@ function ensureInsideWorkspace(target: string | undefined, workspace: string): s
   throw new Error("Path escapes the configured workspace.");
 }
 
+/**
+ * 使用方法：executeTool() 处理 workspace.list 时调用。
+ * 作用：列出目标目录的一层文件和子目录并返回文本结果。
+ * 边界：不会递归读取内容，也不会显示被忽略目录内部信息。
+ */
 async function listWorkspace(input: JsonObject, config: AppConfig): Promise<string> {
   const workspace = resolveWorkspace(config);
   const target = ensureInsideWorkspace(stringInput(input, "path") || ".", workspace);
@@ -63,6 +83,11 @@ async function listWorkspace(input: JsonObject, config: AppConfig): Promise<stri
   return rows.length ? rows.join("\n") : "(empty)";
 }
 
+/**
+ * 使用方法：executeTool() 处理 workspace.read 时调用。
+ * 作用：读取 workspace 内普通文件并限制最大字节数。
+ * 边界：拒绝目录和超大文件，不负责解析文档格式。
+ */
 async function readWorkspaceFile(input: JsonObject, config: AppConfig): Promise<string> {
   const requestedPath = stringInput(input, "path");
   if (!requestedPath) throw new Error("workspace.read requires input.path.");
@@ -77,6 +102,11 @@ async function readWorkspaceFile(input: JsonObject, config: AppConfig): Promise<
   return readFile(target, "utf8");
 }
 
+/**
+ * 使用方法：workspace.search 需要递归文件清单时调用。
+ * 作用：遍历 workspace，跳过忽略目录并收集普通文件。
+ * 边界：只返回路径，不读取内容；结果受 workspace 边界保护。
+ */
 async function walkFiles(root: string, workspace: string, results: string[] = []): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true });
   for (const entry of entries) {
@@ -91,6 +121,11 @@ async function walkFiles(root: string, workspace: string, results: string[] = []
   return results;
 }
 
+/**
+ * 使用方法：搜索或读取候选 Buffer 前调用。
+ * 作用：通过空字节和不可打印字符比例判断文件是否可能是二进制。
+ * 边界：这是启发式检测，不替代 MIME 或专业文件识别。
+ */
 function looksBinary(buffer: Buffer): boolean {
   const sampleLength = Math.min(buffer.length, 8000);
   for (let index = 0; index < sampleLength; index += 1) {
@@ -99,6 +134,11 @@ function looksBinary(buffer: Buffer): boolean {
   return false;
 }
 
+/**
+ * 使用方法：executeTool() 处理 workspace.search 时调用。
+ * 作用：在 workspace 文本文件中查找关键词并限制结果数量。
+ * 边界：跳过二进制和读取失败文件，不执行正则表达式。
+ */
 async function searchWorkspace(input: JsonObject, config: AppConfig): Promise<string> {
   const query = stringInput(input, "query");
   if (!query) throw new Error("workspace.search requires input.query.");
@@ -126,6 +166,11 @@ async function searchWorkspace(input: JsonObject, config: AppConfig): Promise<st
   return matches.length ? matches.join("\n") : "No matches.";
 }
 
+/**
+ * 使用方法：审批后的 shell.run ToolRun 由 executeTool() 调用。
+ * 作用：把命令转换成 FootPlan 并复用脚能力执行、审计和输出格式化。
+ * 边界：调用此方法前必须已经完成工具审批；它不接受未审批的直接自然语言执行。
+ */
 async function runShell(input: JsonObject, config: AppConfig): Promise<string> {
   const command = stringInput(input, "command");
   if (!command) throw new Error("shell.run requires input.command.");
@@ -156,6 +201,11 @@ async function runShell(input: JsonObject, config: AppConfig): Promise<string> {
   return output;
 }
 
+/**
+ * 使用方法：已确定工具名称和输入后调用。
+ * 作用：把 workspace.list/read/search 和 shell.run 路由到对应实现。
+ * 边界：未知工具会抛错；该入口不创建审批记录。
+ */
 export async function executeTool(
   name: string,
   input: JsonObject = {},
@@ -176,6 +226,11 @@ export async function executeTool(
   }
 }
 
+/**
+ * 使用方法：工具面板批准请求后传入 runId。
+ * 作用：读取 ToolRun、更新 running/completed/failed 状态并执行对应工具。
+ * 边界：只执行 approved 或无需审批的请求，不会绕过状态检查。
+ */
 export async function executeToolRun(runId: string): Promise<ToolRun | null> {
   const { getToolRun } = await import("./store.js");
   const run = await getToolRun(runId);

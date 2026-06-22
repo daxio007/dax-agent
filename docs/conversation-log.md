@@ -136,3 +136,11 @@
 - Codex 复现后确认密钥已经保存在本地，但旧界面没有展示“已有密钥”；同时 Provider 仍是 Echo，所以不会调用真实模型。
 - Codex 将当前 Provider 切换为 OpenAI-compatible，并修复设置面板：显示脱敏密钥状态、解释 Provider 行为、校验配置、显示保存反馈并增加连接测试。
 - Codex 通过浏览器验证密钥留空保存仍会保留、Echo 字段会禁用、配置状态清晰；真实模型连接测试成功，浏览器控制台无错误。
+
+## 2026-06-22
+
+- 用户发现代码中仍有许多方法没有 doc，要求全部补齐，并明确表示不希望以后再次看到遗漏。
+- Codex 使用 TypeScript AST 扫描全部 `src/**/*.ts`，确认有 80 个命名方法缺少 JSDoc。
+- Codex 为这些方法补充详细 JSDoc，覆盖使用方法、作用和边界，涉及 `agent`、`config`、`ids`、`providers`、`store`、`tools`、`server` 和 Web 控制台。
+- Codex 新增 `docs/jsdoc-standard.md` 和 `scripts/check-jsdoc.mjs`，把方法文档要求固化为自动检查。
+- `npm run check:jsdoc` 会检查函数、方法、构造器、访问器和命名箭头函数，并在缺少 JSDoc 或必填小节时失败。

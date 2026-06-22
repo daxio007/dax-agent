@@ -8,6 +8,11 @@ interface ChatCompletionResponse {
   }>;
 }
 
+/**
+ * 使用方法：completeChat() 构造请求地址前传入 provider 和配置 Base URL。
+ * 作用：移除末尾斜杠，并为 OpenAI 与 Ollama 提供默认地址。
+ * 边界：只规范化地址字符串，不验证网络可达性。
+ */
 function normalizeBaseUrl(provider: string, baseUrl: string): string {
   if (baseUrl) return baseUrl.replace(/\/$/, "");
   if (provider === "ollama") return "http://127.0.0.1:11434/v1";
@@ -15,10 +20,20 @@ function normalizeBaseUrl(provider: string, baseUrl: string): string {
   return "";
 }
 
+/**
+ * 使用方法：echo provider 生成本地回复时传入 Locale。
+ * 作用：统一判断是否应使用中文默认文案。
+ * 边界：只判断 locale 前缀，不改变模型请求内容。
+ */
 function isZh(locale: Locale): boolean {
   return String(locale || "").toLowerCase().startsWith("zh");
 }
 
+/**
+ * 使用方法：Provider 为 echo 时传入消息历史和 locale。
+ * 作用：生成无需外部模型即可显示的本地说明回复。
+ * 边界：不会进行语义推理、工具调用或网络请求。
+ */
 function echoResponse(messages: ChatMessage[], locale: Locale = "zh-CN"): string {
   const lastUser = [...messages].reverse().find((message) => message.role === "user");
   const text = lastUser?.content || "";
@@ -44,6 +59,11 @@ function echoResponse(messages: ChatMessage[], locale: Locale = "zh-CN"): string
   ].join("\n");
 }
 
+/**
+ * 使用方法：Agent Core 或连接测试传入 AppConfig、ChatMessage[] 和 locale。
+ * 作用：统一调用 echo、OpenAI-compatible 或 Ollama-compatible chat completions。
+ * 边界：只返回模型文本，不信任其决策；Agent Core 仍需解析、校验和执行 Policy Gate。
+ */
 export async function completeChat(
   config: AppConfig,
   messages: ChatMessage[],

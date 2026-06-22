@@ -1,6 +1,6 @@
 # 项目记忆
 
-最后更新：2026-06-18
+最后更新：2026-06-22
 
 这个文件是 DAX Agent 的长期记忆。它用来保存那些应该跨越长对话、上下文压缩和未来开发会话继续有效的重要信息。
 
@@ -23,6 +23,7 @@
 - 2026-06-17 已设计并实现“脚/执行”能力第一阶段。脚是第一类执行器，负责在受控边界内启动、观察和结束本地执行过程。第一版脚只做 workspace 内前台命令执行，采用 `FootPlan -> FootPreview -> FootResult`，并让现有 `shell.run` 复用脚能力审计链。
 - 2026-06-18 已完成 Agent Core 第一阶段运行时。自然语言消息现在经过 `ListenResult -> Agent Core -> optional ReadPlan -> AgentDecision -> PolicyGateResult -> CapabilityRoute -> SpeakPlan`。模型只给候选，代码负责硬控制、schema 校验、fallback、策略、路由和审计；手和脚目前只接收 `ActionProposal`，不会被大脑自动执行。
 - 2026-06-18 已修复模型设置体验。API key 保存后继续只返回脱敏值，但设置面板会明确显示“密钥已保存”；Echo 会明确提示不会调用真实模型；真实 Provider 保存前会校验 Base URL、模型和密钥；新增“测试连接”入口。用户当前配置已切换为 OpenAI-compatible，连接测试成功。
+- 2026-06-22 明确 JSDoc 是整个 TypeScript 源码的强制规范，而不只覆盖新能力模块。全部命名方法必须说明“使用方法”和“作用”，涉及副作用或安全边界时还要说明“边界”；`npm run check:jsdoc` 会自动阻止遗漏。
 
 ## 产品目标
 
@@ -78,6 +79,7 @@ DAX Agent 的长期方向是一个 local-first、自托管的个人 AI Agent Gat
 - `docs/read-capability-implementation.md`：读能力第一阶段运行时实现记录。
 - `docs/listen-capability-implementation.md`：听能力第一阶段运行时实现记录。
 - `docs/speak-capability-implementation.md`：嘴巴能力第一阶段运行时实现记录。
+- `docs/jsdoc-standard.md`：全部 TypeScript 命名方法的 JSDoc 覆盖范围、必填内容和自动检查规则。
 
 运行目标：
 

@@ -87,6 +87,11 @@ interface AddSpokenAssistantMessageOptions {
   meta?: JsonObject;
 }
 
+/**
+ * 使用方法：传入当前界面 Locale，供消息流程选择中文或英文默认文案。
+ * 作用：统一判断 zh-CN、zh-TW 等中文 locale，避免各分支重复字符串判断。
+ * 边界：只判断语言前缀，不翻译内容，也不修改会话状态。
+ */
 function isZh(locale: Locale): boolean {
   return String(locale || "").toLowerCase().startsWith("zh");
 }
@@ -162,6 +167,11 @@ async function addSpokenAssistantMessage(
   };
 }
 
+/**
+ * 使用方法：把用户原始文本传入，返回 help、tool、unknown 或 null。
+ * 作用：将 `/help`、`/read`、`/run` 等显式命令转换成稳定的本地命令结构。
+ * 边界：只解析命令，不创建 ToolRun、不执行工具，也不处理普通自然语言。
+ */
 function parseSlashCommand(content: string): SlashCommand | null {
   const trimmed = content.trim();
   if (!trimmed.startsWith("/")) return null;
@@ -209,6 +219,11 @@ function parseSlashCommand(content: string): SlashCommand | null {
   }
 }
 
+/**
+ * 使用方法：处理 `/help` 时传入 locale，返回可以交给嘴巴能力的 Markdown 文本。
+ * 作用：集中维护中英文内置命令说明。
+ * 边界：只生成说明文本，不检查工具状态，也不执行任何命令。
+ */
 function helpText(locale: Locale = "zh-CN"): string {
   if (isZh(locale)) {
     return [
@@ -236,6 +251,11 @@ function helpText(locale: Locale = "zh-CN"): string {
   ].join("\n");
 }
 
+/**
+ * 使用方法：processUserMessage() 识别到 SlashCommand 后调用，并传入会话和用户消息。
+ * 作用：处理帮助、未知命令、只读工具自动运行和 shell 待审批流程。
+ * 边界：只处理显式 slash command；自然语言必须进入 Agent Core。
+ */
 async function handleSlash(
   sessionId: string,
   userMessage: Message,

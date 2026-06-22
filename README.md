@@ -88,6 +88,18 @@ Hand and foot decisions remain proposals. Agent Core does not automatically modi
 
 This is intentionally a small, inspectable foundation. More channels, richer skills, scheduled tasks, and mobile/IM bridges can be added on top of this gateway.
 
+## Development checks
+
+Every named TypeScript method must have JSDoc that explains its usage and purpose. See `docs/jsdoc-standard.md` for the complete rules.
+
+Run these checks before committing source changes:
+
+```bash
+npm run check:jsdoc
+npm run typecheck
+npm run build
+```
+
 ## 项目记忆
 
 重要讨论、设计说明和决策记录保存在 `docs/`：
@@ -109,6 +121,7 @@ This is intentionally a small, inspectable foundation. More channels, richer ski
 - `docs/read-capability-implementation.md`
 - `docs/listen-capability-implementation.md`
 - `docs/speak-capability-implementation.md`
+- `docs/jsdoc-standard.md`
 - `docs/decision-log.md`
 - `docs/roadmap.md`
 - `docs/conversation-log.md`

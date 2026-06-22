@@ -33,6 +33,11 @@ const dataDir = path.join(process.cwd(), "data");
 const storePath = path.join(dataDir, "store.json");
 let writeQueue: Promise<unknown> = Promise.resolve();
 
+/**
+ * 使用方法：首次运行、store.json 不存在或读取旧版本数据时调用。
+ * 作用：创建包含所有持久化集合的完整空 Store。
+ * 边界：只返回内存对象，不创建目录或写入磁盘。
+ */
 function emptyStore(): Store {
   return {
     version: 1,
@@ -59,6 +64,11 @@ function emptyStore(): Store {
   };
 }
 
+/**
+ * 使用方法：所有查询和 mutate() 写事务开始时调用。
+ * 作用：读取 data/store.json，并用 emptyStore() 补全旧版本缺失字段。
+ * 边界：只把文件不存在视为空 Store；损坏 JSON 和其他错误会抛出。
+ */
 async function readStore(): Promise<Store> {
   try {
     const raw = await readFile(storePath, "utf8");
@@ -71,6 +81,11 @@ async function readStore(): Promise<Store> {
   }
 }
 
+/**
+ * 使用方法：mutate() 完成内存修改后调用。
+ * 作用：先写临时文件再 rename，降低进程中断造成半写 JSON 的风险。
+ * 边界：只提供单文件原子替换，不是数据库事务或跨进程锁。
+ */
 async function writeStore(store: Store): Promise<void> {
   await mkdir(dataDir, { recursive: true });
   const tmpPath = `${storePath}.tmp`;
@@ -78,6 +93,11 @@ async function writeStore(store: Store): Promise<void> {
   await rename(tmpPath, storePath);
 }
 
+/**
+ * 使用方法：所有需要修改 Store 的公开方法把修改回调传入。
+ * 作用：通过 writeQueue 串行执行读、改、写，避免同一进程内并发覆盖。
+ * 边界：只协调当前 Node 进程；多个独立进程同时写入仍可能冲突。
+ */
 async function mutate<T>(mutator: (store: Store) => T | Promise<T>): Promise<T> {
   writeQueue = writeQueue.then(async () => {
     const store = await readStore();
@@ -102,6 +122,11 @@ function upsertById<T extends { id: string }>(items: T[], value: T): void {
   }
 }
 
+/**
+ * 使用方法：会话列表 API 和 Web 前端刷新时调用。
+ * 作用：按更新时间倒序返回 SessionSummary，并计算每个会话消息数。
+ * 边界：不返回完整消息内容或工具运行详情。
+ */
 export async function listSessions(): Promise<SessionSummary[]> {
   const store = await readStore();
   return store.sessions
@@ -113,6 +138,11 @@ export async function listSessions(): Promise<SessionSummary[]> {
     }));
 }
 
+/**
+ * 使用方法：新建会话 API 或前端“新会话”按钮调用，可传入标题。
+ * 作用：创建 Session，并写入 session.created 审计记录。
+ * 边界：不会自动创建欢迎消息或调用模型。
+ */
 export async function createSession(title = "New session"): Promise<Session> {
   return mutate((store) => {
     const session = {
@@ -132,6 +162,11 @@ export async function createSession(title = "New session"): Promise<Session> {
   });
 }
 
+/**
+ * 使用方法：打开指定会话时传入 sessionId。
+ * 作用：返回会话信息、消息和该会话 ToolRun。
+ * 边界：会话不存在时返回 null，不会隐式创建。
+ */
 export async function getSession(sessionId: string): Promise<SessionDetail | null> {
   const store = await readStore();
   const session = store.sessions.find((item) => item.id === sessionId);
@@ -143,6 +178,11 @@ export async function getSession(sessionId: string): Promise<SessionDetail | nul
   };
 }
 
+/**
+ * 使用方法：删除会话 API 传入明确的 sessionId。
+ * 作用：删除会话及其消息、工具运行和 Agent Core 关联结果，并记录审计。
+ * 边界：不会删除独立能力历史或外部对象，调用前应由 UI 明确确认。
+ */
 export async function deleteSession(sessionId: string): Promise<boolean> {
   return mutate((store) => {
     const before = store.sessions.length;
@@ -163,6 +203,11 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
   });
 }
 
+/**
+ * 使用方法：听力分析或嘴巴表达完成后传入 sessionId、角色、内容和 meta。
+ * 作用：保存消息、更新时间，并用第一条用户消息生成默认标题。
+ * 边界：若会话不存在会创建占位会话；不会调用模型或能力。
+ */
 export async function addMessage(
   sessionId: string,
   role: MessageRole,
@@ -197,6 +242,11 @@ export async function addMessage(
   });
 }
 
+/**
+ * 使用方法：Listen 和 Agent Core 需要短期对话上下文时调用。
+ * 作用：按写入顺序返回指定会话最近 limit 条消息。
+ * 边界：不做摘要或脱敏，调用方进入模型上下文前必须自行过滤。
+ */
 export async function getRecentMessages(sessionId: string, limit = 30): Promise<Message[]> {
   const store = await readStore();
   return store.messages
@@ -204,6 +254,11 @@ export async function getRecentMessages(sessionId: string, limit = 30): Promise<
     .slice(-limit);
 }
 
+/**
+ * 使用方法：Slash command 或未来能力调度确定工具请求后调用。
+ * 作用：创建 pending/running ToolRun 并记录 tool.created 审计。
+ * 边界：只创建请求，不执行工具；需要审批的请求必须等待明确批准。
+ */
 export async function createToolRun(
   sessionId: string,
   messageId: string,
@@ -241,6 +296,11 @@ export async function createToolRun(
   });
 }
 
+/**
+ * 使用方法：工具面板或 Agent Core 查询待处理动作时调用，可选 sessionId。
+ * 作用：按创建时间倒序返回全部或指定会话的 ToolRun。
+ * 边界：只读取记录，不改变审批或执行状态。
+ */
 export async function listToolRuns(sessionId: string | null = null): Promise<ToolRun[]> {
   const store = await readStore();
   return store.toolRuns
@@ -249,11 +309,21 @@ export async function listToolRuns(sessionId: string | null = null): Promise<Too
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/**
+ * 使用方法：审批、拒绝或执行工具前传入 runId。
+ * 作用：查找并返回单个 ToolRun。
+ * 边界：不存在时返回 null，不会创建替代请求。
+ */
 export async function getToolRun(runId: string): Promise<ToolRun | null> {
   const store = await readStore();
   return store.toolRuns.find((run) => run.id === runId) || null;
 }
 
+/**
+ * 使用方法：审批、执行完成、失败或拒绝时传入 runId 和字段 patch。
+ * 作用：更新 ToolRun、刷新 updatedAt，并写入指定类型审计。
+ * 边界：不验证状态机合法性；调用方必须保证状态转换正确。
+ */
 export async function updateToolRun(
   runId: string,
   patch: Partial<ToolRun>,
@@ -276,6 +346,11 @@ export async function updateToolRun(
   });
 }
 
+/**
+ * 使用方法：审计 API 或调试页面传入可选 limit。
+ * 作用：按最新优先返回最近的 AuditRecord。
+ * 边界：只返回记录，不聚合解释，也不包含被能力模块刻意省略的秘密。
+ */
 export async function listAudit(limit = 100): Promise<AuditRecord[]> {
   const store = await readStore();
   return store.audit.slice(-limit).reverse();
