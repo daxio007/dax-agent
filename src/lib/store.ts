@@ -85,6 +85,8 @@ async function readStore(): Promise<Store> {
  * 使用方法：mutate() 完成内存修改后调用。
  * 作用：先写临时文件再 rename，降低进程中断造成半写 JSON 的风险。
  * 边界：只提供单文件原子替换，不是数据库事务或跨进程锁。
+ *
+ * @param store 需要写入磁盘的完整持久化 Store 快照。
  */
 async function writeStore(store: Store): Promise<void> {
   await mkdir(dataDir, { recursive: true });
@@ -97,6 +99,8 @@ async function writeStore(store: Store): Promise<void> {
  * 使用方法：所有需要修改 Store 的公开方法把修改回调传入。
  * 作用：通过 writeQueue 串行执行读、改、写，避免同一进程内并发覆盖。
  * 边界：只协调当前 Node 进程；多个独立进程同时写入仍可能冲突。
+ *
+ * @param mutator 在串行写入队列中读取并修改 Store 的回调函数。
  */
 async function mutate<T>(mutator: (store: Store) => T | Promise<T>): Promise<T> {
   writeQueue = writeQueue.then(async () => {
@@ -112,6 +116,9 @@ async function mutate<T>(mutator: (store: Store) => T | Promise<T>): Promise<T> 
  * 使用方法：在一次 store mutate 内保存具有 id 的 Agent Core 对象时调用。
  * 作用：同一个 id 再次写入时覆盖旧值，否则追加新值，避免调试 API 重放造成重复对象。
  * 边界：该 helper 只修改传入数组，不写磁盘、不创建审计记录，也不判断对象是否合法。
+ *
+ * @param items 需要查找、去重、更新或转换的项目集合。
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function upsertById<T extends { id: string }>(items: T[], value: T): void {
   const index = items.findIndex((item) => item.id === value.id);
@@ -142,6 +149,8 @@ export async function listSessions(): Promise<SessionSummary[]> {
  * 使用方法：新建会话 API 或前端“新会话”按钮调用，可传入标题。
  * 作用：创建 Session，并写入 session.created 审计记录。
  * 边界：不会自动创建欢迎消息或调用模型。
+ *
+ * @param title 会话、上下文块或界面项目使用的显示标题。
  */
 export async function createSession(title = "New session"): Promise<Session> {
   return mutate((store) => {
@@ -166,6 +175,8 @@ export async function createSession(title = "New session"): Promise<Session> {
  * 使用方法：打开指定会话时传入 sessionId。
  * 作用：返回会话信息、消息和该会话 ToolRun。
  * 边界：会话不存在时返回 null，不会隐式创建。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
  */
 export async function getSession(sessionId: string): Promise<SessionDetail | null> {
   const store = await readStore();
@@ -182,6 +193,8 @@ export async function getSession(sessionId: string): Promise<SessionDetail | nul
  * 使用方法：删除会话 API 传入明确的 sessionId。
  * 作用：删除会话及其消息、工具运行和 Agent Core 关联结果，并记录审计。
  * 边界：不会删除独立能力历史或外部对象，调用前应由 UI 明确确认。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
  */
 export async function deleteSession(sessionId: string): Promise<boolean> {
   return mutate((store) => {
@@ -207,6 +220,11 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
  * 使用方法：听力分析或嘴巴表达完成后传入 sessionId、角色、内容和 meta。
  * 作用：保存消息、更新时间，并用第一条用户消息生成默认标题。
  * 边界：若会话不存在会创建占位会话；不会调用模型或能力。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
+ * @param role 消息发送方角色，例如 user、assistant 或 system。
+ * @param content 调用方提供、需要解析、保存、表达或发送的正文内容。
+ * @param meta 附加到消息上的可选结构化元数据。
  */
 export async function addMessage(
   sessionId: string,
@@ -246,6 +264,9 @@ export async function addMessage(
  * 使用方法：Listen 和 Agent Core 需要短期对话上下文时调用。
  * 作用：按写入顺序返回指定会话最近 limit 条消息。
  * 边界：不做摘要或脱敏，调用方进入模型上下文前必须自行过滤。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
+ * @param limit 最多读取或返回的记录数量。
  */
 export async function getRecentMessages(sessionId: string, limit = 30): Promise<Message[]> {
   const store = await readStore();
@@ -258,6 +279,12 @@ export async function getRecentMessages(sessionId: string, limit = 30): Promise<
  * 使用方法：Slash command 或未来能力调度确定工具请求后调用。
  * 作用：创建 pending/running ToolRun 并记录 tool.created 审计。
  * 边界：只创建请求，不执行工具；需要审批的请求必须等待明确批准。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
+ * @param messageId 触发当前流程的消息唯一标识。
+ * @param tool 工具定义或工具名称，用于创建和执行 ToolRun。
+ * @param input 创建 ToolRun 所需的结构化输入。
+ * @param approvalRequired 是否必须获得明确审批后才能执行该工具请求。
  */
 export async function createToolRun(
   sessionId: string,
@@ -300,6 +327,8 @@ export async function createToolRun(
  * 使用方法：工具面板或 Agent Core 查询待处理动作时调用，可选 sessionId。
  * 作用：按创建时间倒序返回全部或指定会话的 ToolRun。
  * 边界：只读取记录，不改变审批或执行状态。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
  */
 export async function listToolRuns(sessionId: string | null = null): Promise<ToolRun[]> {
   const store = await readStore();
@@ -313,6 +342,8 @@ export async function listToolRuns(sessionId: string | null = null): Promise<Too
  * 使用方法：审批、拒绝或执行工具前传入 runId。
  * 作用：查找并返回单个 ToolRun。
  * 边界：不存在时返回 null，不会创建替代请求。
+ *
+ * @param runId 需要查询、审批或执行的工具运行唯一标识。
  */
 export async function getToolRun(runId: string): Promise<ToolRun | null> {
   const store = await readStore();
@@ -323,6 +354,10 @@ export async function getToolRun(runId: string): Promise<ToolRun | null> {
  * 使用方法：审批、执行完成、失败或拒绝时传入 runId 和字段 patch。
  * 作用：更新 ToolRun、刷新 updatedAt，并写入指定类型审计。
  * 边界：不验证状态机合法性；调用方必须保证状态转换正确。
+ *
+ * @param runId 需要查询、审批或执行的工具运行唯一标识。
+ * @param patch 需要合并到现有配置、记录或对象中的增量字段。
+ * @param auditType 写入更新记录时使用的审计事件类型。
  */
 export async function updateToolRun(
   runId: string,
@@ -350,6 +385,8 @@ export async function updateToolRun(
  * 使用方法：审计 API 或调试页面传入可选 limit。
  * 作用：按最新优先返回最近的 AuditRecord。
  * 边界：只返回记录，不聚合解释，也不包含被能力模块刻意省略的秘密。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listAudit(limit = 100): Promise<AuditRecord[]> {
   const store = await readStore();
@@ -367,6 +404,8 @@ export async function listAudit(limit = 100): Promise<AuditRecord[]> {
  * 作用：
  * - 保留 Agent 看过什么、为什么看、风险如何的历史。
  * - 让后续 Memory、Skill 和调试流程可以复盘读取行为。
+ *
+ * @param event 当前要分析、持久化或响应的事件对象。
  */
 export async function recordReadEvent(
   event: Omit<ReadEvent, "id" | "createdAt"> & Partial<Pick<ReadEvent, "id" | "createdAt">>
@@ -401,6 +440,8 @@ export async function recordReadEvent(
  * 作用：
  * - 给 UI、调试页、Memory 层提供“Agent 最近看过什么”的时间线。
  * - 不返回原始文件或网页内容，只返回读取来源、原因和风险标记。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listReadEvents(limit = 100): Promise<ReadEvent[]> {
   const store = await readStore();
@@ -418,6 +459,9 @@ export async function listReadEvents(limit = 100): Promise<ReadEvent[]> {
  * 作用：
  * - 保留 Agent 听到了什么、如何理解、下一步建议是什么。
  * - 让后续调试、记忆沉淀和 Skill 唤醒可以复盘听力判断。
+ *
+ * @param event 当前要分析、持久化或响应的事件对象。
+ * @param result 需要持久化并写入审计的 ListenAnalysis。
  */
 export async function recordListenAnalysis(
   event: ListenEvent,
@@ -450,6 +494,8 @@ export async function recordListenAnalysis(
  * 作用：
  * - 给调试页、审计页和未来 Memory Policy 提供输入事件时间线。
  * - 事件中的 rawText 已由听能力模块做基础脱敏和截断。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listListenEvents(limit = 100): Promise<ListenEvent[]> {
   const store = await readStore();
@@ -466,6 +512,8 @@ export async function listListenEvents(limit = 100): Promise<ListenEvent[]> {
  * 作用：
  * - 展示 Agent 最近如何理解用户和环境信号。
  * - 帮助检查 intent、constraint、correction 和 contextNeed 是否判断正确。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listListenResults(limit = 100): Promise<ListenResult[]> {
   const store = await readStore();
@@ -483,6 +531,11 @@ export async function listListenResults(limit = 100): Promise<ListenResult[]> {
  * 作用：
  * - 保留 Agent 对谁说、怎么说、是否草稿、风险标记是什么。
  * - 让未来 UI、Memory 和调试流程可以复盘表达链路。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param message 需要持久化、表达或关联审计的单条消息。
+ * @param result 需要持久化并写入审计的 SpeakInteraction。
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
  */
 export async function recordSpeakInteraction(
   plan: SpeakPlan,
@@ -527,6 +580,8 @@ export async function recordSpeakInteraction(
  * 作用：
  * - 给调试页和审计页展示 Agent 最近为什么准备表达。
  * - 帮助检查受众、Channel、模式和审批边界是否正确。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listSpeakPlans(limit = 100): Promise<SpeakPlan[]> {
   const store = await readStore();
@@ -543,6 +598,8 @@ export async function listSpeakPlans(limit = 100): Promise<SpeakPlan[]> {
  * 作用：
  * - 展示 Agent 实际准备展示或作为草稿输出的内容。
  * - 方便检查草稿标签、来源引用、不确定性和风险标记。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listSpeakMessages(limit = 100): Promise<SpeakMessage[]> {
   const store = await readStore();
@@ -559,6 +616,8 @@ export async function listSpeakMessages(limit = 100): Promise<SpeakMessage[]> {
  * 作用：
  * - 展示表达是否已交给本地 Channel、是否被阻止，以及是否只是外部投递候选。
  * - 明确嘴巴的 externalDelivery 永远不是外部发送完成记录。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listSpeakResults(limit = 100): Promise<SpeakResult[]> {
   const store = await readStore();
@@ -575,6 +634,8 @@ export async function listSpeakResults(limit = 100): Promise<SpeakResult[]> {
  * 作用：
  * - 保存“准备修改什么、为什么修改、风险等级和是否需要审批”。
  * - 明确计划不是修改结果，不能据此声称文件或外部对象已经被改变。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
  */
 export async function recordHandPlan(plan: HandPlan): Promise<HandPlan> {
   return mutate((store) => {
@@ -607,6 +668,8 @@ export async function recordHandPlan(plan: HandPlan): Promise<HandPlan> {
  * 作用：
  * - 保存 diff、受影响目标、风险标记、是否可回滚和审批要求。
  * - 让用户、大脑和未来记忆系统可以复盘动手前看到了什么。
+ *
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
  */
 export async function recordHandPreview(preview: HandPreview): Promise<HandPreview> {
   return mutate((store) => {
@@ -640,6 +703,8 @@ export async function recordHandPreview(preview: HandPreview): Promise<HandPrevi
  * 作用：
  * - 保存真实修改结果、应用的 diff、变更目标和回滚可用性。
  * - 只有 status 为 applied 的 HandResult 才表示对象真的被修改。
+ *
+ * @param result 需要持久化并写入审计的 HandResult。
  */
 export async function recordHandResult(result: HandResult): Promise<HandResult> {
   return mutate((store) => {
@@ -677,6 +742,8 @@ export async function recordHandResult(result: HandResult): Promise<HandResult> 
  * 作用：
  * - 展示 Agent 最近准备修改的对象和风险等级。
  * - 帮助确认修改没有绕过 HandPlan。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listHandPlans(limit = 100): Promise<HandPlan[]> {
   const store = await readStore();
@@ -693,6 +760,8 @@ export async function listHandPlans(limit = 100): Promise<HandPlan[]> {
  * 作用：
  * - 展示手在修改前准备改什么。
  * - 帮助确认所有写入都有 preview。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listHandPreviews(limit = 100): Promise<HandPreview[]> {
   const store = await readStore();
@@ -709,6 +778,8 @@ export async function listHandPreviews(limit = 100): Promise<HandPreview[]> {
  * 作用：
  * - 展示真实修改历史。
  * - 为未来 Agent Core 的反思、回滚和 Skill 沉淀提供依据。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listHandResults(limit = 100): Promise<HandResult[]> {
   const store = await readStore();
@@ -725,6 +796,8 @@ export async function listHandResults(limit = 100): Promise<HandResult[]> {
  * 作用：
  * - 保留 Agent 准备运行什么命令、为什么运行、风险等级和审批要求。
  * - 明确计划本身不是执行结果，只有后续 FootResult 才能证明命令真的运行过。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
  */
 export async function recordFootPlan(plan: FootPlan): Promise<FootPlan> {
   return mutate((store) => {
@@ -757,6 +830,8 @@ export async function recordFootPlan(plan: FootPlan): Promise<FootPlan> {
  * 作用：
  * - 保存命令、cwd、timeout、风险标记和是否需要审批。
  * - 让用户和未来大脑可以复盘“执行前系统看到了什么风险”。
+ *
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
  */
 export async function recordFootPreview(preview: FootPreview): Promise<FootPreview> {
   return mutate((store) => {
@@ -790,6 +865,8 @@ export async function recordFootPreview(preview: FootPreview): Promise<FootPrevi
  * 作用：
  * - 保存真实执行结果，包括状态、输出、错误、耗时和命令结果。
  * - 只有 status 为 completed 的 FootResult 才表示脚真的成功走完一次执行。
+ *
+ * @param result 需要持久化并写入审计的 FootResult。
  */
 export async function recordFootResult(result: FootResult): Promise<FootResult> {
   return mutate((store) => {
@@ -827,6 +904,8 @@ export async function recordFootResult(result: FootResult): Promise<FootResult> 
  * 作用：
  * - 展示 Agent 最近准备运行的命令计划。
  * - 帮助检查风险等级和审批要求是否合理。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listFootPlans(limit = 100): Promise<FootPlan[]> {
   const store = await readStore();
@@ -843,6 +922,8 @@ export async function listFootPlans(limit = 100): Promise<FootPlan[]> {
  * 作用：
  * - 展示命令、cwd、timeout、风险标记和是否需要审批。
  * - 帮助确认脚没有绕过 preview 直接运行。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listFootPreviews(limit = 100): Promise<FootPreview[]> {
   const store = await readStore();
@@ -859,6 +940,8 @@ export async function listFootPreviews(limit = 100): Promise<FootPreview[]> {
  * 作用：
  * - 展示真实执行历史。
  * - 为未来 Agent Core 的反思和下一步判断提供过程结果。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listFootResults(limit = 100): Promise<FootResult[]> {
   const store = await readStore();
@@ -879,6 +962,8 @@ export async function listFootResults(limit = 100): Promise<FootResult[]> {
  * 边界：
  * - 记录决策不代表对应能力已经执行。
  * - 该方法不会调用读、说、手、脚或模型。
+ *
+ * @param decision 已经生成并待校验、路由、表达或持久化的 Agent 决策。
  */
 export async function recordAgentDecision(decision: AgentDecision): Promise<AgentDecision> {
   return mutate((store) => {
@@ -908,6 +993,8 @@ export async function recordAgentDecision(decision: AgentDecision): Promise<Agen
  *
  * 边界：
  * - 返回的是决策历史，不等同于能力执行历史。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listAgentDecisions(limit = 100): Promise<AgentDecision[]> {
   const store = await readStore();
@@ -928,6 +1015,8 @@ export async function listAgentDecisions(limit = 100): Promise<AgentDecision[]> 
  * 边界：
  * - Policy Gate 允许 proposal 不代表允许 hand apply 或 foot execute。
  * - 该方法只记录检查结果，不执行审批或能力调用。
+ *
+ * @param result 需要持久化并写入审计的 PolicyGateResult。
  */
 export async function recordPolicyGateResult(result: PolicyGateResult): Promise<PolicyGateResult> {
   return mutate((store) => {
@@ -956,6 +1045,8 @@ export async function recordPolicyGateResult(result: PolicyGateResult): Promise<
  *
  * 作用：
  * - 解释某个大脑决策为什么被允许、阻止或要求审批。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listPolicyGateResults(limit = 100): Promise<PolicyGateResult[]> {
   const store = await readStore();
@@ -974,6 +1065,8 @@ export async function listPolicyGateResults(limit = 100): Promise<PolicyGateResu
  *
  * 边界：
  * - route.mode 为 execute 也只表示调度意图；真实能力结果仍由对应 capability 记录。
+ *
+ * @param route Agent Core 为当前决策生成的能力路由。
  */
 export async function recordCapabilityRoute(route: CapabilityRoute): Promise<CapabilityRoute> {
   return mutate((store) => {
@@ -1000,6 +1093,8 @@ export async function recordCapabilityRoute(route: CapabilityRoute): Promise<Cap
  *
  * 作用：
  * - 展示大脑如何把抽象决策映射到具体能力。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listCapabilityRoutes(limit = 100): Promise<CapabilityRoute[]> {
   const store = await readStore();
@@ -1020,6 +1115,8 @@ export async function listCapabilityRoutes(limit = 100): Promise<CapabilityRoute
  * 边界：
  * - 该方法只记录大脑判断，不执行 route 指向的能力。
  * - 不保存 AgentCoreInput、模型 API key 或完整未过滤上下文。
+ *
+ * @param result 需要持久化并写入审计的 AgentCoreResult。
  */
 export async function recordAgentCoreResult(result: AgentCoreResult): Promise<AgentCoreResult> {
   return mutate((store) => {
@@ -1108,6 +1205,9 @@ export async function recordAgentCoreResult(result: AgentCoreResult): Promise<Ag
  * 边界：
  * - 错误详情最多保存 1000 个字符。
  * - 该方法不处理异常，也不生成用户回复。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
+ * @param detail 需要记录到审计或错误结果中的详细说明。
  */
 export async function recordAgentCoreFailure(sessionId: string, detail: string): Promise<AuditRecord> {
   return mutate((store) => {
@@ -1132,6 +1232,8 @@ export async function recordAgentCoreFailure(sessionId: string, detail: string):
  *
  * 作用：
  * - 一次查看工作记忆、决策、策略、路由、模型解析状态和 warnings。
+ *
+ * @param limit 最多返回的最近记录数量，避免一次读取完整历史。
  */
 export async function listAgentCoreResults(limit = 100): Promise<AgentCoreResult[]> {
   const store = await readStore();

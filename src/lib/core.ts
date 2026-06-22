@@ -100,6 +100,8 @@ export interface DecideNextStepOptions {
  * 使用方法：由 processUserMessage() 或 /api/core/decide 在完成听力分析后调用。
  * 作用：把本轮用户文本、ListenResult、短消息历史、上下文块和待处理工具请求组装成稳定的 AgentCoreInput。
  * 边界：该方法只复制和规范化输入，不调用模型、不读取文件、不写入 store，也不执行任何能力。
+ *
+ * @param options 控制当前方法可选行为、依赖或执行策略的配置对象。
  */
 export function createAgentCoreInput(options: CreateAgentCoreInputOptions): AgentCoreInput {
   return {
@@ -121,6 +123,8 @@ export function createAgentCoreInput(options: CreateAgentCoreInputOptions): Agen
  * 使用方法：decideNextStep() 收到 AgentCoreInput 后首先调用。
  * 作用：创建本轮短期工作记忆，集中保存目标、约束、意图、上下文摘要、待追问事项和记忆候选。
  * 边界：WorkingMemory 只服务当前决策，不会自动写入长期记忆，也不会读取 Skill 或执行行动。
+ *
+ * @param input 创建 WorkingMemory 所需的结构化输入。
  */
 export function createWorkingMemory(input: AgentCoreInput): WorkingMemory {
   const memoryCandidates = input.listenResult.memoryCandidates.map((candidate) =>
@@ -154,6 +158,9 @@ export function createWorkingMemory(input: AgentCoreInput): WorkingMemory {
  * 使用方法：Agent Core 完成一次 ReadPlan 后，把原 WorkingMemory 和新 ContextBlock[] 传入。
  * 作用：生成包含最新上下文摘要和 source ids 的新工作记忆，供第二次决策使用。
  * 边界：该方法会做摘要和脱敏，不会保留无限长度原文，也不会修改传入的 WorkingMemory。
+ *
+ * @param memory 当前 Agent Core 的短期工作记忆快照。
+ * @param contextBlocks 读能力生成并可加入工作记忆的结构化上下文块。
  */
 export function updateWorkingMemoryWithContext(
   memory: WorkingMemory,
@@ -173,6 +180,9 @@ export function updateWorkingMemoryWithContext(
  * 使用方法：decideNextStep() 在调用模型前传入当前输入和工作记忆。
  * 作用：优先处理 stop、pause 和纯 resume 等必须服从的控制信号，并在“只讨论、不写代码”约束下阻止实现型决策。
  * 边界：该方法不调用模型，不执行 read/hand/foot，也不会让模型覆盖用户已经明确给出的硬控制信号。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param _memory 当前工作记忆快照；保留在控制器签名中供规则扩展使用，当前分支不直接读取。
  */
 export function applyHardControl(
   input: AgentCoreInput,
@@ -261,6 +271,8 @@ export function applyHardControl(
  * 使用方法：在 hard control 没有直接给出决策后调用。
  * 作用：根据 ListenResult.contextNeeds、是否已经读过和当前 ContextBlock 判断是否应进入一次 read round。
  * 边界：该方法只返回布尔判断，不创建计划、不读取内容；同一轮最多允许一次自动读取。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 export function shouldReadContext(input: AgentCoreInput): boolean {
   if (input.readAttempted || input.contextBlocks.length > 0) return false;
@@ -271,6 +283,8 @@ export function shouldReadContext(input: AgentCoreInput): boolean {
  * 使用方法：当 shouldReadContext() 返回 true 时调用，并把返回的 ReadPlan 交给 executeAndRecordReadPlan()。
  * 作用：把听力层建议的 ContextNeed 收敛成受限、可审计的一次读取计划。
  * 边界：该方法不执行读取；不支持的 connector source 会被过滤；第一阶段最多保留三个来源。
+ *
+ * @param input 创建 ReadPlanFromDecision 所需的结构化输入。
  */
 export function createReadPlanFromDecision(input: AgentCoreInput): ReadPlan | null {
   const sources = automaticReadSources(input);
@@ -301,6 +315,9 @@ export function createReadPlanFromDecision(input: AgentCoreInput): ReadPlan | nu
  * 使用方法：reasonWithModel() 调用前传入当前输入和工作记忆。
  * 作用：把复杂运行时对象压缩成模型可消费的最小摘要，并明确允许的 decision types。
  * 边界：不会传入 AppConfig、API key、完整 store 或无限长度上下文。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param memory 当前 Agent Core 的短期工作记忆快照。
  */
 export function buildModelReasoningInput(
   input: AgentCoreInput,
@@ -335,6 +352,9 @@ export function buildModelReasoningInput(
  * 使用方法：decideNextStep() 在需要语义推理且 provider 不是 echo 时调用。
  * 作用：使用现有 Provider 请求严格 JSON 的候选决策，并把原始文本、解析结果或解析错误包装成 ModelReasoningResult。
  * 边界：模型结果只是候选，不会直接执行；echo、请求失败和非法 JSON 都会返回 parseError，由 fallback 接管。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param memory 当前 Agent Core 的短期工作记忆快照。
  */
 export async function reasonWithModel(
   input: AgentCoreInput,
@@ -399,6 +419,8 @@ export async function reasonWithModel(
  * 使用方法：reasonWithModel() 收到模型文本后调用，也可以在单元测试中直接传入 JSON 字符串验证解析。
  * 作用：提取 fenced JSON 或普通 JSON 对象，并只保留 AgentDecisionCandidate 允许的字段。
  * 边界：该方法不信任模型字段、不补全决策、不应用 Policy Gate；非法 JSON 会抛错交给 fallback。
+ *
+ * @param rawText 模型或用户提供、尚未解析和清洗的原始文本。
  */
 export function parseModelDecision(rawText: string): AgentDecisionCandidate {
   const text = String(rawText || "").trim();
@@ -431,6 +453,9 @@ export function parseModelDecision(rawText: string): AgentDecisionCandidate {
  * 使用方法：模型 JSON 解析成功后，把候选和原始 AgentCoreInput 传入。
  * 作用：校验 decision type、置信度、用户可见内容和当前阶段边界，并补全 id、时间、read plan、memory、skill 或 action proposal。
  * 边界：该方法不会执行决策，也不会写入 store；不在白名单或违反当前硬约束的候选会抛错。
+ *
+ * @param candidate 模型或规则生成、尚待校验的候选结构。
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 export function validateAgentDecision(
   candidate: AgentDecisionCandidate,
@@ -493,6 +518,9 @@ export function validateAgentDecision(
  * 使用方法：模型不可用、模型解析失败或候选校验失败时调用。
  * 作用：根据 ListenResult、是否已读取、读取失败和 provider 原始文本生成保守但可用的本地决策。
  * 边界：fallback 永远不会直接写文件、执行命令或声称行动已经完成。
+ *
+ * @param input 创建 FallbackDecision 所需的结构化输入。
+ * @param modelReasoning 模型推理阶段的结果和失败信息，用于生成回退决策。
  */
 export function createFallbackDecision(
   input: AgentCoreInput,
@@ -665,6 +693,9 @@ export function createFallbackDecision(
  * 使用方法：AgentDecision 完成后、CapabilityRoute 创建前调用。
  * 作用：评估决策风险、用户硬约束、审批要求和第一阶段被禁止的能力，并返回结构化策略结果。
  * 边界：Policy Gate 只判断和记录；不会替代 hand/foot 自身的 preview、approval 和安全检查。
+ *
+ * @param decision 已经生成并待校验、路由、表达或持久化的 Agent 决策。
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 export function applyPolicyGate(
   decision: AgentDecision,
@@ -750,6 +781,9 @@ export function applyPolicyGate(
  * 使用方法：Policy Gate 完成后传入最终决策和策略结果。
  * 作用：把抽象 AgentDecision 映射为 read、speak、hand、foot、memory、skill 或 none 的统一 CapabilityRoute。
  * 边界：该方法只描述路由，不执行能力；hand/foot 在第一阶段永远只能使用 propose 模式。
+ *
+ * @param decision 已经生成并待校验、路由、表达或持久化的 Agent 决策。
+ * @param policyGate Policy Gate 对当前决策给出的允许、阻止和风险结果。
  */
 export function routeAgentDecision(
   decision: AgentDecision,
@@ -818,6 +852,10 @@ export function routeAgentDecision(
  * 使用方法：AgentDecision 和 PolicyGateResult 已确定后调用，并把返回值交给 speak.ts 生成用户可见消息。
  * 作用：根据回答、追问、行动建议、暂停、停止或策略阻止选择正确的 SpeakMode 和安全策略。
  * 边界：该方法只创建 SpeakPlan，不生成消息、不对外发送，也不暴露完整内部 reasoning。
+ *
+ * @param decision 已经生成并待校验、路由、表达或持久化的 Agent 决策。
+ * @param input 创建 SpeakPlanFromDecision 所需的结构化输入。
+ * @param policyGate Policy Gate 对当前决策给出的允许、阻止和风险结果。
  */
 export function createSpeakPlanFromDecision(
   decision: AgentDecision,
@@ -853,6 +891,10 @@ export function createSpeakPlanFromDecision(
  * 使用方法：decision.type 为 propose_hand_action 或 propose_foot_action 时调用。
  * 作用：把抽象行动意图收敛为可审计的 ActionProposal，并为未来 HandPlan/FootPlan 留下最小建议字段。
  * 边界：ActionProposal 不是计划预览和执行结果；该方法不会写文件、生成完整命令或调用 hand/foot。
+ *
+ * @param decision 已经生成并待校验、路由、表达或持久化的 Agent 决策。
+ * @param input 创建 ActionProposalFromDecision 所需的结构化输入。
+ * @param candidate 模型或规则生成、尚待校验的候选结构。
  */
 export function createActionProposalFromDecision(
   decision: AgentDecision,
@@ -909,6 +951,9 @@ export function createActionProposalFromDecision(
  * 使用方法：processUserMessage() 和 /api/core/decide 把完整 AgentCoreInput 交给此入口。
  * 作用：依次执行 WorkingMemory、硬控制、读判断、模型候选、fallback、Policy Gate、能力路由和 SpeakPlan 创建。
  * 边界：该方法不会执行 read/hand/foot；默认只记录结构化大脑结果。自动读取由上层根据 read route 最多执行一次。
+ *
+ * @param input 汇总听、读、会话、配置和待处理工具状态的 Agent Core 输入。
+ * @param options 可选依赖注入和推理配置，主要供测试或替换模型调用。
  */
 export async function decideNextStep(
   input: AgentCoreInput,
@@ -1011,6 +1056,8 @@ export async function decideNextStep(
  * 使用方法：已有完整 AgentCoreResult、但 decideNextStep({ record: false }) 未自动保存时调用。
  * 作用：把完整结果交给 store 原子记录，供 API、审计和未来反思查询。
  * 边界：该方法只持久化结构化结果，不执行 CapabilityRoute。
+ *
+ * @param result 需要持久化并写入审计的 AgentCoreResult。
  */
 export async function recordAgentCoreResult(result: AgentCoreResult): Promise<AgentCoreResult> {
   return persistAgentCoreResult(result);
@@ -1020,6 +1067,9 @@ export async function recordAgentCoreResult(result: AgentCoreResult): Promise<Ag
  * 使用方法：上层在 Agent Core 尚未生成结构化结果前捕获意外异常时调用。
  * 作用：保留 agent.core.failed 审计轨迹，避免大脑失败变成不可见错误。
  * 边界：只记录短错误摘要，不吞掉异常，也不负责生成用户回复。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
+ * @param error 捕获到的未知错误或进程错误对象。
  */
 export async function recordAgentCoreFailure(
   sessionId: string,
@@ -1032,6 +1082,10 @@ export async function recordAgentCoreFailure(
  * 使用方法：createWorkingMemory() 根据 ListenMemoryCandidate 构造候选，store_memory 决策也会调用。
  * 作用：统一生成带 session、敏感度、来源和 shouldStore 标记的 MemoryDecision。
  * 边界：MemoryDecision 只是候选，不会自动修改 docs/project-memory.md 或其他长期存储。
+ *
+ * @param input 创建 MemoryDecision 所需的结构化输入。
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
+ * @param options 控制当前方法可选行为、依赖或执行策略的配置对象。
  */
 function createMemoryDecision(
   input: AgentCoreInput,
@@ -1062,6 +1116,9 @@ function createMemoryDecision(
  * 使用方法：recall_skill 候选通过校验后调用。
  * 作用：记录未来 Skill Index 应该搜索什么，以及第一阶段不创建 Skill 的明确边界。
  * 边界：不会读取磁盘 Skill、安装插件或调用 MCP。
+ *
+ * @param input 创建 SkillDecision 所需的结构化输入。
+ * @param query 用于模型、Skill、搜索或过滤流程的查询文本。
  */
 function createSkillDecision(input: AgentCoreInput, query: string): SkillDecision {
   return {
@@ -1079,6 +1136,9 @@ function createSkillDecision(input: AgentCoreInput, query: string): SkillDecisio
  * 使用方法：规则、模型校验和 fallback 需要创建基础 AgentDecision 时调用。
  * 作用：统一补全 id、sessionId、createdAt、置信度和经过脱敏的用户可见内容。
  * 边界：只创建基础决策，不添加 Policy Gate、route、SpeakPlan 或真实能力结果。
+ *
+ * @param input 创建 Decision 所需的结构化输入。
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function createDecision(
   input: AgentCoreInput,
@@ -1106,6 +1166,8 @@ function createDecision(
  * 使用方法：shouldReadContext() 和 createReadPlanFromDecision() 共用。
  * 作用：把 ListenResult 建议来源过滤到第一阶段可执行集合，去重并限制最多三个来源。
  * 边界：不会返回 communication、app_content、MCP resource 等尚无 connector 的来源。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 function automaticReadSources(input: AgentCoreInput): ReadSource[] {
   const seen = new Set<string>();
@@ -1125,6 +1187,8 @@ function automaticReadSources(input: AgentCoreInput): ReadSource[] {
  * 使用方法：buildModelReasoningInput() 和 validateAgentDecision() 调用。
  * 作用：根据用户“不写、不执行、不记忆”等显式边界收窄模型可以选择的决策类型。
  * 边界：返回白名单副本，模型不能通过输出额外字符串扩展能力。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 function allowedDecisionTypesForInput(input: AgentCoreInput): AgentDecisionType[] {
   let allowed = [...agentDecisionTypes];
@@ -1147,6 +1211,8 @@ function allowedDecisionTypesForInput(input: AgentCoreInput): AgentDecisionType[
  * 使用方法：Policy Gate、fallback 和模型白名单判断是否允许产生真实世界行动候选。
  * 作用：识别“只讨论、不要写、不要执行、不要提交”等明确限制。
  * 边界：只影响本轮行动候选，不修改项目永久配置。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 function forbidsRealWorldAction(input: AgentCoreInput): boolean {
   return /只讨论|只分析|不要写|别写|不要修改|别修改|不要执行|别执行|不要运行|别运行|不要提交|不要推送|do not write|do not modify|do not run|do not execute/i.test(
@@ -1158,6 +1224,8 @@ function forbidsRealWorldAction(input: AgentCoreInput): boolean {
  * 使用方法：reasonWithModel() 创建 system message 时调用。
  * 作用：要求模型只输出严格 JSON，并明确 proposal、事实透明度和禁止直接执行的边界。
  * 边界：prompt 不提供任何可以绕过代码 Policy Gate 的权限。
+ *
+ * @param allowedTypes 当前输入和策略允许模型选择的决策类型集合。
  */
 function modelReasoningSystemPrompt(allowedTypes: AgentDecisionType[]): string {
   return [
@@ -1178,6 +1246,8 @@ function modelReasoningSystemPrompt(allowedTypes: AgentDecisionType[]): string {
  * 使用方法：buildModelReasoningInput() 压缩 ListenResult 时调用。
  * 作用：保留模型需要的 intent、constraints、state changes、context needs、risk 和 confidence。
  * 边界：不包含完整 ListenEvent rawText。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 function summarizeListenResult(input: AgentCoreInput): string {
   return cleanText(
@@ -1202,6 +1272,8 @@ function summarizeListenResult(input: AgentCoreInput): string {
  * 使用方法：WorkingMemory 和 ModelReasoningInput 需要最近对话摘要时调用。
  * 作用：只保留最近八条消息的 role 和短内容，帮助模型理解指代。
  * 边界：每条消息最多保留 300 字符，并做秘密样式脱敏。
+ *
+ * @param messages 用于查找上下文、模型推理或界面渲染的消息列表。
  */
 function summarizeRecentMessages(messages: Message[]): string {
   return messages
@@ -1214,6 +1286,8 @@ function summarizeRecentMessages(messages: Message[]): string {
  * 使用方法：createWorkingMemory() 和 updateWorkingMemoryWithContext() 调用。
  * 作用：把 ContextBlock 标题、可信度、风险和内容压缩成有总长度上限的工作摘要。
  * 边界：不保存无限长度 ContextBlock 原文，秘密样式内容会被脱敏。
+ *
+ * @param blocks 需要压缩或整理为模型上下文的上下文块列表。
  */
 function summarizeContextBlocks(blocks: ContextBlock[]): string {
   if (!blocks.length) return "";
@@ -1236,6 +1310,8 @@ function summarizeContextBlocks(blocks: ContextBlock[]): string {
  * 使用方法：decideNextStep() 创建 AgentCoreResult.inputSummary 时调用。
  * 作用：保存足够复盘本轮输入的短摘要，而不是持久化完整 AgentCoreInput。
  * 边界：不包含 AppConfig、API key、完整消息历史或完整 ContextBlock。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 function summarizeCoreInput(input: AgentCoreInput): string {
   return sanitizeStoredText(
@@ -1255,6 +1331,8 @@ function summarizeCoreInput(input: AgentCoreInput): string {
  * 使用方法：parseModelDecision() 在没有 fenced JSON 时调用。
  * 作用：从普通模型文本中截取第一个完整外层 JSON 对象。
  * 边界：这不是宽松修复器；找不到对象时直接抛错，让 fallback 接管。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function extractFirstJsonObject(text: string): string {
   const start = text.indexOf("{");
@@ -1269,6 +1347,8 @@ function extractFirstJsonObject(text: string): string {
  * 使用方法：createFallbackDecision() 判断非法 JSON 是否仍是可展示的普通模型回答。
  * 作用：保留兼容旧模型的纯文本回答，同时拒绝半截 JSON 和旧 tool_request 控制块。
  * 边界：返回文本仍会脱敏和截断；结构化残片不会直接展示给用户。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function usablePlainModelText(text: string): string {
   const trimmed = text.trim();
@@ -1280,6 +1360,9 @@ function usablePlainModelText(text: string): string {
  * 使用方法：createSpeakPlanFromDecision() 选择表达方式时调用。
  * 作用：把 AgentDecisionType 和 Policy Gate 状态映射为嘴巴已有的 SpeakMode。
  * 边界：只选择表达模式，不生成用户内容。
+ *
+ * @param decision 已经生成并待校验、路由、表达或持久化的 Agent 决策。
+ * @param policyGate Policy Gate 对当前决策给出的允许、阻止和风险结果。
  */
 function speakModeForDecision(
   decision: AgentDecision,
@@ -1310,6 +1393,10 @@ function speakModeForDecision(
  * 使用方法：decideNextStep() 发现 Policy Gate.allowed=false 时调用。
  * 作用：把可能带有行动承诺的模型文案替换成清晰的阻止说明、原因和被阻止能力。
  * 边界：只改变用户可见摘要，不改变原始内部 reason，也不会尝试绕过策略寻找其他执行路径。
+ *
+ * @param decision 已经生成并待校验、路由、表达或持久化的 Agent 决策。
+ * @param policyGate Policy Gate 对当前决策给出的允许、阻止和风险结果。
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
  */
 function policyBlockedSummary(
   decision: AgentDecision,
@@ -1340,6 +1427,9 @@ function policyBlockedSummary(
  * 使用方法：createActionProposalFromDecision() 在模型没有给出风险时调用。
  * 作用：根据 push、删除、覆盖、依赖安装和外部访问等词语给 proposal 一个保守风险等级。
  * 边界：启发式风险只服务 proposal，不能替代 HandPreview 或 FootPreview 的正式风险判断。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param kind 当前方法要解析、判断或创建的类别标识。
  */
 function inferProposalRisk(input: AgentCoreInput, kind: ActionProposal["kind"]): AgentRiskLevel {
   if (/删除|覆盖|迁移|重置|push|发布|部署|生产|凭证|密钥|delete|overwrite|reset|deploy|production/i.test(input.userText)) {
@@ -1354,6 +1444,8 @@ function inferProposalRisk(input: AgentCoreInput, kind: ActionProposal["kind"]):
 /**
  * 使用方法：parseModelDecision() 对 unknown JSON 做对象判定时调用。
  * 作用：排除 null、数组和基础值，保证后续字段访问安全。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -1362,6 +1454,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * 使用方法：parseModelDecision() 读取可选字符串字段时调用。
  * 作用：只接受 string，并去掉首尾空白。
+ *
+ * @param value 需要尝试解析为 String 的未知可选值；无法识别时返回 undefined。
  */
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -1370,6 +1464,8 @@ function optionalString(value: unknown): string | undefined {
 /**
  * 使用方法：parseModelDecision() 读取 confidence 时调用。
  * 作用：只接受有限数值，其他值交给默认置信度处理。
+ *
+ * @param value 需要尝试解析为 Number 的未知可选值；无法识别时返回 undefined。
  */
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
@@ -1379,6 +1475,8 @@ function optionalNumber(value: unknown): number | undefined {
  * 使用方法：parseModelDecision() 校验模型给出的 type。
  * 作用：把 unknown 收窄为 AgentDecisionType。
  * 边界：不在白名单的值返回 undefined，后续 validate 会拒绝。
+ *
+ * @param value 需要尝试解析为 DecisionType 的未知可选值；无法识别时返回 undefined。
  */
 function optionalDecisionType(value: unknown): AgentDecisionType | undefined {
   return typeof value === "string" && agentDecisionTypes.has(value as AgentDecisionType)
@@ -1389,6 +1487,8 @@ function optionalDecisionType(value: unknown): AgentDecisionType | undefined {
 /**
  * 使用方法：parseModelDecision() 校验 memoryKind。
  * 作用：把 unknown 收窄为 MemoryDecision.kind。
+ *
+ * @param value 需要尝试解析为 MemoryKind 的未知可选值；无法识别时返回 undefined。
  */
 function optionalMemoryKind(value: unknown): MemoryDecision["kind"] | undefined {
   return typeof value === "string" && memoryKinds.has(value as MemoryDecision["kind"])
@@ -1399,6 +1499,8 @@ function optionalMemoryKind(value: unknown): MemoryDecision["kind"] | undefined 
 /**
  * 使用方法：parseModelDecision() 校验 actionRisk。
  * 作用：把 unknown 收窄为 low、medium 或 high。
+ *
+ * @param value 需要尝试解析为 RiskLevel 的未知可选值；无法识别时返回 undefined。
  */
 function optionalRiskLevel(value: unknown): AgentRiskLevel | undefined {
   return typeof value === "string" && riskLevels.has(value as AgentRiskLevel)
@@ -1409,6 +1511,8 @@ function optionalRiskLevel(value: unknown): AgentRiskLevel | undefined {
 /**
  * 使用方法：创建或校验 AgentDecision 时传入任意 confidence。
  * 作用：把非有限值变成 0.5，并把正常数值限制在 0 到 1。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function clampConfidence(value: number | undefined): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0.5;
@@ -1419,6 +1523,9 @@ function clampConfidence(value: number | undefined): number {
  * 使用方法：所有进入工作记忆、审计摘要和用户可见结果的文本都可调用。
  * 作用：做秘密样式脱敏、空白整理和长度限制。
  * 边界：这是基础防护，不代替 Speak Capability 的最终安全过滤。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
+ * @param maxChars 输出允许保留的最大字符数。
  */
 function cleanText(value: string, maxChars: number): string {
   return sanitizeStoredText(value, maxChars).replace(/\r\n/g, "\n").trim();
@@ -1427,6 +1534,9 @@ function cleanText(value: string, maxChars: number): string {
 /**
  * 使用方法：可选错误和可选字段需要清理时调用。
  * 作用：空值返回 undefined，非空文本走 cleanText()。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
+ * @param maxChars 输出允许保留的最大字符数。
  */
 function cleanOptionalText(value: string | undefined, maxChars: number): string | undefined {
   if (!value) return undefined;
@@ -1438,6 +1548,9 @@ function cleanOptionalText(value: string | undefined, maxChars: number): string 
  * 使用方法：准备把模型文本、用户摘要或上下文摘要放进持久化对象前调用。
  * 作用：替换明显凭据并限制最大字符数。
  * 边界：不会尝试识别所有隐私数据，后续嘴巴和记忆层仍需执行各自策略。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
+ * @param maxChars 输出允许保留的最大字符数。
  */
 function sanitizeStoredText(value: string, maxChars: number): string {
   let text = String(value || "");
@@ -1452,6 +1565,8 @@ function sanitizeStoredText(value: string, maxChars: number): string {
 /**
  * 使用方法：组装 constraints、ids、reasons 和 blocked capabilities 时调用。
  * 作用：去掉空字符串并保持首次出现顺序去重。
+ *
+ * @param values 需要批量归一化、去重、替换或格式化的值集合。
  */
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
@@ -1460,6 +1575,8 @@ function uniqueStrings(values: string[]): string[] {
 /**
  * 使用方法：所有 catch 分支需要把 unknown 转成可审计错误文本时调用。
  * 作用：优先返回 Error.message，否则安全转成字符串。
+ *
+ * @param error 捕获到的未知错误或进程错误对象。
  */
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -1468,6 +1585,8 @@ function errorMessage(error: unknown): string {
 /**
  * 使用方法：需要根据 locale 选择中文或英文默认文案时调用。
  * 作用：兼容 zh-CN、zh-TW 等以 zh 开头的 locale。
+ *
+ * @param locale 用户界面或消息的区域语言标识，用于选择中英文表达。
  */
 function isZh(locale: Locale): boolean {
   return String(locale || "").toLowerCase().startsWith("zh");

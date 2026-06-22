@@ -38,6 +38,8 @@ export const toolManifest: ToolDefinition[] = [
  * 使用方法：根据模型路由或 slash command 的工具名称查询 manifest。
  * 作用：返回匹配的 ToolDefinition，供审批和执行流程检查。
  * 边界：未知工具返回 null，不进行模糊匹配。
+ *
+ * @param name 需要查找或执行的工具、资源或配置名称。
  */
 export function getTool(name: string): ToolDefinition | null {
   return toolManifest.find((tool) => tool.name === name) || null;
@@ -47,6 +49,9 @@ export function getTool(name: string): ToolDefinition | null {
  * 使用方法：工具实现从 JsonObject 读取 path、query、command 等字符串字段时调用。
  * 作用：只接受字符串并过滤空值。
  * 边界：不做路径解析、命令验证或类型转换。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param key 要读取、翻译、索引或匹配的字段键名。
  */
 function stringInput(input: JsonObject, key: string): string | undefined {
   const value = input[key];
@@ -57,6 +62,9 @@ function stringInput(input: JsonObject, key: string): string | undefined {
  * 使用方法：workspace list/read/search 处理用户目标路径前调用。
  * 作用：解析绝对路径并确认目标没有逃出 workspace。
  * 边界：只保护路径边界，不检查文件内容、权限或符号链接的外部语义。
+ *
+ * @param target 需要解析、读取、修改、执行或校验的目标。
+ * @param workspace 限制文件读取、搜索、修改和命令执行范围的 workspace 根目录。
  */
 function ensureInsideWorkspace(target: string | undefined, workspace: string): string {
   const resolved = path.resolve(workspace, target || ".");
@@ -71,6 +79,9 @@ function ensureInsideWorkspace(target: string | undefined, workspace: string): s
  * 使用方法：executeTool() 处理 workspace.list 时调用。
  * 作用：列出目标目录的一层文件和子目录并返回文本结果。
  * 边界：不会递归读取内容，也不会显示被忽略目录内部信息。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 async function listWorkspace(input: JsonObject, config: AppConfig): Promise<string> {
   const workspace = resolveWorkspace(config);
@@ -87,6 +98,9 @@ async function listWorkspace(input: JsonObject, config: AppConfig): Promise<stri
  * 使用方法：executeTool() 处理 workspace.read 时调用。
  * 作用：读取 workspace 内普通文件并限制最大字节数。
  * 边界：拒绝目录和超大文件，不负责解析文档格式。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 async function readWorkspaceFile(input: JsonObject, config: AppConfig): Promise<string> {
   const requestedPath = stringInput(input, "path");
@@ -106,6 +120,10 @@ async function readWorkspaceFile(input: JsonObject, config: AppConfig): Promise<
  * 使用方法：workspace.search 需要递归文件清单时调用。
  * 作用：遍历 workspace，跳过忽略目录并收集普通文件。
  * 边界：只返回路径，不读取内容；结果受 workspace 边界保护。
+ *
+ * @param root 递归读取或扫描开始时使用的根目录。
+ * @param workspace 限制文件读取、搜索、修改和命令执行范围的 workspace 根目录。
+ * @param results 需要汇总、格式化或返回的多个能力结果。
  */
 async function walkFiles(root: string, workspace: string, results: string[] = []): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true });
@@ -125,6 +143,8 @@ async function walkFiles(root: string, workspace: string, results: string[] = []
  * 使用方法：搜索或读取候选 Buffer 前调用。
  * 作用：通过空字节和不可打印字符比例判断文件是否可能是二进制。
  * 边界：这是启发式检测，不替代 MIME 或专业文件识别。
+ *
+ * @param buffer 需要检测是否包含二进制内容的原始字节缓冲区。
  */
 function looksBinary(buffer: Buffer): boolean {
   const sampleLength = Math.min(buffer.length, 8000);
@@ -138,6 +158,9 @@ function looksBinary(buffer: Buffer): boolean {
  * 使用方法：executeTool() 处理 workspace.search 时调用。
  * 作用：在 workspace 文本文件中查找关键词并限制结果数量。
  * 边界：跳过二进制和读取失败文件，不执行正则表达式。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 async function searchWorkspace(input: JsonObject, config: AppConfig): Promise<string> {
   const query = stringInput(input, "query");
@@ -170,6 +193,9 @@ async function searchWorkspace(input: JsonObject, config: AppConfig): Promise<st
  * 使用方法：审批后的 shell.run ToolRun 由 executeTool() 调用。
  * 作用：把命令转换成 FootPlan 并复用脚能力执行、审计和输出格式化。
  * 边界：调用此方法前必须已经完成工具审批；它不接受未审批的直接自然语言执行。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 async function runShell(input: JsonObject, config: AppConfig): Promise<string> {
   const command = stringInput(input, "command");
@@ -205,6 +231,10 @@ async function runShell(input: JsonObject, config: AppConfig): Promise<string> {
  * 使用方法：已确定工具名称和输入后调用。
  * 作用：把 workspace.list/read/search 和 shell.run 路由到对应实现。
  * 边界：未知工具会抛错；该入口不创建审批记录。
+ *
+ * @param name 需要查找或执行的工具、资源或配置名称。
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function executeTool(
   name: string,
@@ -230,6 +260,8 @@ export async function executeTool(
  * 使用方法：工具面板批准请求后传入 runId。
  * 作用：读取 ToolRun、更新 running/completed/failed 状态并执行对应工具。
  * 边界：只执行 approved 或无需审批的请求，不会绕过状态检查。
+ *
+ * @param runId 需要查询、审批或执行的工具运行唯一标识。
  */
 export async function executeToolRun(runId: string): Promise<ToolRun | null> {
   const { getToolRun } = await import("./store.js");

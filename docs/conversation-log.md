@@ -144,3 +144,9 @@
 - Codex 为这些方法补充详细 JSDoc，覆盖使用方法、作用和边界，涉及 `agent`、`config`、`ids`、`providers`、`store`、`tools`、`server` 和 Web 控制台。
 - Codex 新增 `docs/jsdoc-standard.md` 和 `scripts/check-jsdoc.mjs`，把方法文档要求固化为自动检查。
 - `npm run check:jsdoc` 会检查函数、方法、构造器、访问器和命名箭头函数，并在缺少 JSDoc 或必填小节时失败。
+- 用户继续指出方法参数也需要注释，否则无法知道每个参数的用途。
+- Codex 扫描出 345 个带参数的方法和 544 个参数，并为每个参数补充 `@param` 用途说明。
+- 关键入口参数会说明来源和流程角色，例如 `processUserMessage()` 的 sessionId、content、locale，以及 Agent Core 的 input 和 options。
+- JSDoc 自动检查已升级为同时验证每个方法参数是否存在非空 `@param` 说明。
+- 用户要求提交当前代码，并把“每次修改代码后都需要提交到仓库”加入长期约束。
+- Codex 新增根目录 `AGENTS.md`，并把验证后提交、仅按明确要求推送远端的规则写入项目记忆和决策记录。

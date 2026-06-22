@@ -161,6 +161,8 @@ export interface SpeakInteractionOutput {
  * 作用：
  * - 把“说什么、对谁说、用什么身份说、是否需要外部投递确认”固定成结构化计划。
  * - 让嘴巴不再是裸文本输出，而是可审计、可过滤、可扩展的表达层。
+ *
+ * @param input 创建 SpeakPlan 所需的结构化输入。
  */
 export function createSpeakPlan(input: CreateSpeakPlanInput = {}): SpeakPlan {
   const audience = input.audience || "user";
@@ -199,6 +201,8 @@ export function createSpeakPlan(input: CreateSpeakPlanInput = {}): SpeakPlan {
  * 作用：
  * - 让“耳朵”的 intent 和“嘴巴”的表达模式接起来。
  * - 例如 status -> status，correct -> acknowledge，implement/design -> plan。
+ *
+ * @param result 当前要格式化、返回、审计或持久化的能力结果。
  */
 export function speakModeFromListenResult(result: ListenResult): SpeakMode {
   if (result.nextStep === "ask_clarifying_question") return "ask";
@@ -224,6 +228,9 @@ export function speakModeFromListenResult(result: ListenResult): SpeakMode {
  * 作用：
  * - 对输出内容做草稿标记、敏感信息过滤、风险标记和格式判断。
  * - 明确“这是一条要展示的表达”，而不是执行结果或外部发送记录。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param input 创建 SpeakMessage 所需的结构化输入。
  */
 export function createSpeakMessage(plan: SpeakPlan, input: CreateSpeakMessageInput): SpeakMessage {
   const rawContent = String(input.content || "");
@@ -275,6 +282,10 @@ export function createSpeakMessage(plan: SpeakPlan, input: CreateSpeakMessageInp
  * 作用：
  * - 固定“表达已生成/已交付到哪里/是否被阻止”的结果记录。
  * - 把本地表达和未来外部发送能力分开。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param message 需要持久化、表达或关联审计的单条消息。
+ * @param input 创建 SpeakResult 所需的结构化输入。
  */
 export function createSpeakResult(
   plan: SpeakPlan,
@@ -304,6 +315,8 @@ export function createSpeakResult(
  * 作用：
  * - 一次性完成 SpeakPlan、SpeakMessage、SpeakResult 和审计持久化。
  * - 保证正式表达入口都会留下“嘴巴说了什么、为什么说、对谁说”的记录。
+ *
+ * @param input 创建 AndRecordSpeakInteraction 所需的结构化输入。
  */
 export async function createAndRecordSpeakInteraction(
   input: SpeakInteractionInput
@@ -322,6 +335,8 @@ export async function createAndRecordSpeakInteraction(
  *
  * 作用：
  * - 拒绝未知受众，避免嘴巴在不知道对象是谁时输出。
+ *
+ * @param value 需要校验并转换为 SpeakAudience 的未知输入值。
  */
 export function coerceSpeakAudience(value: unknown): SpeakAudience {
   if (typeof value !== "string" || !speakAudiences.has(value as SpeakAudience)) {
@@ -338,6 +353,8 @@ export function coerceSpeakAudience(value: unknown): SpeakAudience {
  *
  * 作用：
  * - 明确表达内容是本地聊天、文档草稿、邮件草稿还是机器输出。
+ *
+ * @param value 需要校验并转换为 SpeakChannel 的未知输入值。
  */
 export function coerceSpeakChannel(value: unknown): SpeakChannel {
   if (typeof value !== "string" || !speakChannels.has(value as SpeakChannel)) {
@@ -354,6 +371,8 @@ export function coerceSpeakChannel(value: unknown): SpeakChannel {
  *
  * 作用：
  * - 让 answer、plan、report、draft 等输出场景进入稳定枚举。
+ *
+ * @param value 需要校验并转换为 SpeakMode 的未知输入值。
  */
 export function coerceSpeakMode(value: unknown): SpeakMode {
   if (typeof value !== "string" || !speakModes.has(value as SpeakMode)) {
@@ -370,6 +389,8 @@ export function coerceSpeakMode(value: unknown): SpeakMode {
  *
  * 作用：
  * - 控制结构化输出类型，避免未知类型进入 UI 或后续 Channel。
+ *
+ * @param value 需要校验并转换为 SpeakContentType 的未知输入值。
  */
 export function coerceSpeakContentType(value: unknown): SpeakContentType {
   if (typeof value !== "string" || !speakContentTypes.has(value as SpeakContentType)) {
@@ -386,6 +407,8 @@ export function coerceSpeakContentType(value: unknown): SpeakContentType {
  *
  * 作用：
  * - 让表达风格保持在可控集合中。
+ *
+ * @param value 需要校验并转换为 SpeakTone 的未知输入值。
  */
 export function coerceSpeakTone(value: unknown): SpeakTone {
   if (typeof value !== "string" || !speakTones.has(value as SpeakTone)) {
@@ -402,6 +425,8 @@ export function coerceSpeakTone(value: unknown): SpeakTone {
  *
  * 作用：
  * - 避免嘴巴混淆 assistant、user_draft、tool_report 等身份。
+ *
+ * @param value 需要校验并转换为 SpeakIdentity 的未知输入值。
  */
 export function coerceSpeakIdentity(value: unknown): SpeakIdentity {
   if (typeof value !== "string" || !speakIdentities.has(value as SpeakIdentity)) {
@@ -419,6 +444,8 @@ export function coerceSpeakIdentity(value: unknown): SpeakIdentity {
  * 作用：
  * - 保证来源引用至少有 kind 和 label。
  * - 让嘴巴可以区分来源是工具结果、记忆、上下文块还是推断。
+ *
+ * @param value 需要校验并转换为 SpeakSourceRef 的未知输入值。
  */
 export function coerceSpeakSourceRef(value: unknown): SpeakSourceRef {
   if (!isJsonObject(value)) {
@@ -486,6 +513,8 @@ function defaultSafetyPolicy(): SpeakSafetyPolicy {
  * 作用：
  * - API 层传入空对象或部分字段时不会把默认值覆盖成 undefined。
  * - 让“默认引用来源、区分推断、提示未验证内容”的策略始终稳定。
+ *
+ * @param policy 需要与默认策略合并或用于安全判断的策略配置。
  */
 function mergeSourcePolicy(policy: Partial<SpeakSourcePolicy> | undefined): SpeakSourcePolicy {
   const merged = defaultSourcePolicy();
@@ -508,6 +537,8 @@ function mergeSourcePolicy(policy: Partial<SpeakSourcePolicy> | undefined): Spea
  * 作用：
  * - 避免空策略对象关闭默认脱敏、草稿标签和外部承诺保护。
  * - 只有调用方显式传 true 或 false 时才覆盖默认策略。
+ *
+ * @param policy 需要与默认策略合并或用于安全判断的策略配置。
  */
 function mergeSafetyPolicy(policy: Partial<SpeakSafetyPolicy> | undefined): SpeakSafetyPolicy {
   const merged = defaultSafetyPolicy();
@@ -530,6 +561,8 @@ function mergeSafetyPolicy(policy: Partial<SpeakSafetyPolicy> | undefined): Spea
  *
  * 作用：
  * - 保持当前项目默认中文表达，同时允许英文和混合输出。
+ *
+ * @param locale 用户界面或消息的区域语言标识，用于选择中英文表达。
  */
 function languageFromLocale(locale: string | undefined): SpeakPlan["language"] {
   const value = String(locale || "").toLowerCase();
@@ -546,6 +579,9 @@ function languageFromLocale(locale: string | undefined): SpeakPlan["language"] {
  *
  * 作用：
  * - 让审计记录即使在简短 API 调用下也有可读目标。
+ *
+ * @param mode 当前表达或处理模式，用于选择目标、语气或格式。
+ * @param language 输出内容使用的语言，用于选择本地化文案。
  */
 function defaultGoalForMode(mode: SpeakMode, language: SpeakPlan["language"]): string {
   const zh = language === "zh-CN";
@@ -574,6 +610,9 @@ function defaultGoalForMode(mode: SpeakMode, language: SpeakPlan["language"]): s
  *
  * 作用：
  * - 给 SpeakPlan 补上为什么需要表达，方便审计。
+ *
+ * @param mode 当前表达或处理模式，用于选择目标、语气或格式。
+ * @param language 输出内容使用的语言，用于选择本地化文案。
  */
 function defaultReasonForMode(mode: SpeakMode, language: SpeakPlan["language"]): string {
   return language === "zh-CN"
@@ -589,6 +628,10 @@ function defaultReasonForMode(mode: SpeakMode, language: SpeakPlan["language"]):
  *
  * 作用：
  * - 保证外部消息默认只是草稿身份，工具结果默认是 tool_report。
+ *
+ * @param audience 表达内容的目标受众，用于决定身份、隐私和投递边界。
+ * @param channel 表达内容所在或计划投递到的渠道。
+ * @param mode 当前表达或处理模式，用于选择目标、语气或格式。
  */
 function defaultIdentity(audience: SpeakAudience, channel: SpeakChannel, mode: SpeakMode): SpeakIdentity {
   if (mode === "report") return "tool_report";
@@ -607,6 +650,9 @@ function defaultIdentity(audience: SpeakAudience, channel: SpeakChannel, mode: S
  *
  * 作用：
  * - 让状态汇报更简洁，教学解释更友好，外部草稿更正式。
+ *
+ * @param mode 当前表达或处理模式，用于选择目标、语气或格式。
+ * @param audience 表达内容的目标受众，用于决定身份、隐私和投递边界。
  */
 function defaultToneForMode(mode: SpeakMode, audience: SpeakAudience): SpeakTone {
   if (isExternalAudience(audience) || audience === "public") return "formal";
@@ -624,6 +670,8 @@ function defaultToneForMode(mode: SpeakMode, audience: SpeakAudience): SpeakTone
  *
  * 作用：
  * - 设计解释默认更详细，状态确认默认更简短。
+ *
+ * @param mode 当前表达或处理模式，用于选择目标、语气或格式。
  */
 function defaultDetailLevel(mode: SpeakMode): SpeakPlan["detailLevel"] {
   if (mode === "explain" || mode === "plan" || mode === "structured") return "detailed";
@@ -639,6 +687,8 @@ function defaultDetailLevel(mode: SpeakMode): SpeakPlan["detailLevel"] {
  *
  * 作用：
  * - 把本地用户表达和外部沟通候选区分开。
+ *
+ * @param audience 表达内容的目标受众，用于决定身份、隐私和投递边界。
  */
 function isExternalAudience(audience: SpeakAudience): boolean {
   return audience === "external_person" || audience === "external_group" || audience === "public";
@@ -652,6 +702,9 @@ function isExternalAudience(audience: SpeakAudience): boolean {
  *
  * 作用：
  * - 嘴巴可以生成草稿，但任何外部投递候选都应等待后续发送能力确认。
+ *
+ * @param audience 表达内容的目标受众，用于决定身份、隐私和投递边界。
+ * @param channel 表达内容所在或计划投递到的渠道。
  */
 function requiresExternalDeliveryApproval(audience: SpeakAudience, channel: SpeakChannel): boolean {
   if (isExternalAudience(audience)) return true;
@@ -666,6 +719,8 @@ function requiresExternalDeliveryApproval(audience: SpeakAudience, channel: Spea
  *
  * 作用：
  * - 外部受众、草稿 Channel 和 draft 模式都会自动贴上草稿边界。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
  */
 function shouldMarkDraft(plan: SpeakPlan): boolean {
   return plan.mode === "draft" || plan.channel.endsWith("_draft") || isExternalAudience(plan.audience);
@@ -679,6 +734,8 @@ function shouldMarkDraft(plan: SpeakPlan): boolean {
  *
  * 作用：
  * - 去重、校验并在空数组时回退到 plain_text。
+ *
+ * @param values 需要批量归一化、去重、替换或格式化的值集合。
  */
 function normalizeContentTypes(values: SpeakContentType[]): SpeakContentType[] {
   const output: SpeakContentType[] = [];
@@ -697,6 +754,9 @@ function normalizeContentTypes(values: SpeakContentType[]): SpeakContentType[] {
  *
  * 作用：
  * - 给 JSON、YAML、代码块、表格、清单和草稿输出自动打标签。
+ *
+ * @param content 调用方提供、需要解析、保存、表达或发送的正文内容。
+ * @param mode 当前表达或处理模式，用于选择目标、语气或格式。
  */
 function inferContentTypes(content: string, mode: SpeakMode): SpeakContentType[] {
   const types = new Set<SpeakContentType>();
@@ -722,6 +782,8 @@ function inferContentTypes(content: string, mode: SpeakMode): SpeakContentType[]
  *
  * 作用：
  * - 让机器输出保持 JSON/YAML，普通聊天默认使用 Markdown。
+ *
+ * @param types 需要选择格式或进行归一化的内容类型集合。
  */
 function formatForContentTypes(types: SpeakContentType[]): SpeakMessage["format"] {
   if (types.includes("json")) return "json";
@@ -739,6 +801,9 @@ function formatForContentTypes(types: SpeakContentType[]): SpeakMessage["format"
  * 作用：
  * - 默认去除密钥、token、私钥等明显敏感内容。
  * - 外部受众还会弱化邮箱、手机号和本地路径等私密信息。
+ *
+ * @param content 调用方提供、需要解析、保存、表达或发送的正文内容。
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
  */
 function applySpeakSafetyFilters(content: string, plan: SpeakPlan): string {
   let output = content;
@@ -759,6 +824,9 @@ function applySpeakSafetyFilters(content: string, plan: SpeakPlan): string {
  *
  * 作用：
  * - 防止用户或后续 Channel 把草稿误认为已经发送或已经发布。
+ *
+ * @param content 调用方提供、需要解析、保存、表达或发送的正文内容。
+ * @param language 输出内容使用的语言，用于选择本地化文案。
  */
 function ensureDraftLabel(content: string, language: SpeakPlan["language"]): string {
   if (/尚未发送|draft only,\s*not sent|not sent/i.test(content.slice(0, 160))) return content;
@@ -775,6 +843,11 @@ function ensureDraftLabel(content: string, language: SpeakPlan["language"]): str
  * 作用：
  * - 标记外部受众、草稿、推断、不确定性、工具结果、敏感泄露风险等。
  * - 风险标记不阻止输出，但会进入审计和后续 UI。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param rawContent 尚未经过表达安全过滤的原始正文。
+ * @param finalContent 经过安全过滤后准备形成表达消息的最终正文。
+ * @param context 生成结果时使用的补充上下文和已发生事实。
  */
 function detectSpeakRiskFlags(
   plan: SpeakPlan,
@@ -823,6 +896,8 @@ function detectSpeakRiskFlags(
  *
  * 作用：
  * - 保证同一个来源不会重复进入 SpeakMessage。
+ *
+ * @param sourceRefs 支撑表达内容的来源引用列表。
  */
 function normalizeSourceRefs(sourceRefs: SpeakSourceRef[]): SpeakSourceRef[] {
   const output: SpeakSourceRef[] = [];
@@ -844,6 +919,8 @@ function normalizeSourceRefs(sourceRefs: SpeakSourceRef[]): SpeakSourceRef[] {
  *
  * 作用：
  * - 去掉空字符串、重复项和非必要空白。
+ *
+ * @param values 需要批量归一化、去重、替换或格式化的值集合。
  */
 function cleanStringArray(values: string[]): string[] {
   const output: string[] = [];
@@ -862,6 +939,8 @@ function cleanStringArray(values: string[]): string[] {
  *
  * 作用：
  * - 避免空字符串污染结构化记录。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function cleanString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -875,6 +954,8 @@ function cleanString(value: unknown): string | undefined {
  *
  * 作用：
  * - 避免 SpeakMessage 出现空内容，同时明确当前表达还缺少信息。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
  */
 function fallbackContentForMode(plan: SpeakPlan): string {
   if (plan.language === "zh-CN") {
@@ -897,6 +978,8 @@ function fallbackContentForMode(plan: SpeakPlan): string {
  *
  * 作用：
  * - 避免嘴巴把 API key、token、私钥等内容输出到用户或外部草稿中。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function maskSecrets(text: string): string {
   return text
@@ -918,6 +1001,8 @@ function maskSecrets(text: string): string {
  *
  * 作用：
  * - 避免草稿默认包含本地绝对路径、邮箱、手机号等私密信息。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function maskPrivateDataForExternalAudience(text: string): string {
   return text
@@ -935,6 +1020,8 @@ function maskPrivateDataForExternalAudience(text: string): string {
  *
  * 作用：
  * - 即使最终内容被脱敏，审计里仍能看到这次表达曾经碰到隐私风险。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function containsPrivateData(text: string): boolean {
   return (
@@ -953,6 +1040,8 @@ function containsPrivateData(text: string): boolean {
  *
  * 作用：
  * - 没有工具结果来源时，把“已运行/已提交/已发送”等表达标记为需谨慎。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function hasExecutionClaim(text: string): boolean {
   return /已运行|已经运行|运行了|已执行|已经执行|已提交|已经提交|已推送|已经推送|已发送|已经发送|\b(?:passed|completed|committed|pushed)\b|\b(?:I|we|it|message|email|draft)\s+(?:have\s+|has\s+|was\s+)?sent\b/i.test(text);
@@ -966,6 +1055,8 @@ function hasExecutionClaim(text: string): boolean {
  *
  * 作用：
  * - 有 tool_result 或 system_status 来源时，执行类汇报可信度更高。
+ *
+ * @param sourceRefs 支撑表达内容的来源引用列表。
  */
 function hasExecutionSource(sourceRefs: SpeakSourceRef[]): boolean {
   return sourceRefs.some((ref) => ref.kind === "tool_result" || ref.kind === "system_status");
@@ -979,6 +1070,8 @@ function hasExecutionSource(sourceRefs: SpeakSourceRef[]): boolean {
  *
  * 作用：
  * - 将承诺、同意、付款、购买、签署等高影响表达标记为需要用户确认。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function hasExternalCommitment(text: string): boolean {
   return /我承诺|我们承诺|同意|确认购买|付款|支付|签署|接受条款|commit to|we agree|I agree|payment|purchase|sign/i.test(text);
@@ -992,6 +1085,8 @@ function hasExternalCommitment(text: string): boolean {
  *
  * 作用：
  * - 医疗、法律、金融等建议后续可触发更严格的表达策略。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function isHighImpactAdvice(text: string): boolean {
   return /医疗|诊断|用药|法律|合同|诉讼|投资|股票|贷款|保险|税务|medical|legal|investment|loan|tax/i.test(text);
@@ -1005,6 +1100,8 @@ function isHighImpactAdvice(text: string): boolean {
  *
  * 作用：
  * - 缩小 TypeScript 类型，避免直接访问 unknown 字段。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function isJsonObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

@@ -91,6 +91,8 @@ interface AddSpokenAssistantMessageOptions {
  * 使用方法：传入当前界面 Locale，供消息流程选择中文或英文默认文案。
  * 作用：统一判断 zh-CN、zh-TW 等中文 locale，避免各分支重复字符串判断。
  * 边界：只判断语言前缀，不翻译内容，也不修改会话状态。
+ *
+ * @param locale 用户界面或消息的区域语言标识，用于选择中英文表达。
  */
 function isZh(locale: Locale): boolean {
   return String(locale || "").toLowerCase().startsWith("zh");
@@ -107,6 +109,11 @@ function isZh(locale: Locale): boolean {
  * 作用：
  * - 把普通回复、工具结果、状态说明和模型错误统一纳入 Speak Capability。
  * - 让每条 assistant 输出都有受众、Channel、风险标记和审计记录。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
+ * @param content 调用方提供、需要解析、保存、表达或发送的正文内容。
+ * @param locale 用户界面或消息的区域语言标识，用于选择中英文表达。
+ * @param options 控制当前方法可选行为、依赖或执行策略的配置对象。
  */
 async function addSpokenAssistantMessage(
   sessionId: string,
@@ -171,6 +178,8 @@ async function addSpokenAssistantMessage(
  * 使用方法：把用户原始文本传入，返回 help、tool、unknown 或 null。
  * 作用：将 `/help`、`/read`、`/run` 等显式命令转换成稳定的本地命令结构。
  * 边界：只解析命令，不创建 ToolRun、不执行工具，也不处理普通自然语言。
+ *
+ * @param content 调用方提供、需要解析、保存、表达或发送的正文内容。
  */
 function parseSlashCommand(content: string): SlashCommand | null {
   const trimmed = content.trim();
@@ -223,6 +232,8 @@ function parseSlashCommand(content: string): SlashCommand | null {
  * 使用方法：处理 `/help` 时传入 locale，返回可以交给嘴巴能力的 Markdown 文本。
  * 作用：集中维护中英文内置命令说明。
  * 边界：只生成说明文本，不检查工具状态，也不执行任何命令。
+ *
+ * @param locale 用户界面或消息的区域语言标识，用于选择中英文表达。
  */
 function helpText(locale: Locale = "zh-CN"): string {
   if (isZh(locale)) {
@@ -255,6 +266,11 @@ function helpText(locale: Locale = "zh-CN"): string {
  * 使用方法：processUserMessage() 识别到 SlashCommand 后调用，并传入会话和用户消息。
  * 作用：处理帮助、未知命令、只读工具自动运行和 shell 待审批流程。
  * 边界：只处理显式 slash command；自然语言必须进入 Agent Core。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
+ * @param userMessage 已经持久化并触发后续 Agent 流程的用户消息。
+ * @param slash 已经解析出的 Slash Command 名称和参数。
+ * @param locale 用户界面或消息的区域语言标识，用于选择中英文表达。
  */
 async function handleSlash(
   sessionId: string,
@@ -350,6 +366,10 @@ async function handleSlash(
  * - Agent Core 不会在这里自动调用手或脚。
  * - ActionProposal 只会作为建议进入消息 meta，不会写文件或执行命令。
  * - slash command 的现有审批和工具行为保持不变。
+ *
+ * @param sessionId 接收这条用户消息的会话唯一标识。
+ * @param content 用户在当前会话中发送的原始消息正文。
+ * @param locale 本轮消息使用的界面语言，默认使用中文。
  */
 export async function processUserMessage(
   sessionId: string,

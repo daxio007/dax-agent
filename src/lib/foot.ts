@@ -90,6 +90,8 @@ interface ExecError extends Error {
  *
  * 作用：
  * - 避免把 null、数组或字符串当成可读取字段的对象。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function isJsonObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -103,6 +105,8 @@ function isJsonObject(value: unknown): value is JsonObject {
  *
  * 作用：
  * - 只接受真正的字符串，并自动裁剪首尾空白。
+ *
+ * @param value 需要尝试解析为 String 的未知可选值；无法识别时返回 undefined。
  */
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -116,6 +120,8 @@ function optionalString(value: unknown): string | undefined {
  *
  * 作用：
  * - 确保动作类型只会落在 FootActionKind 定义的集合内。
+ *
+ * @param value 需要校验并转换为 FootActionKind 的未知输入值。
  */
 function coerceFootActionKind(value: unknown): FootActionKind {
   if (typeof value === "string" && footActionKinds.has(value as FootActionKind)) {
@@ -132,6 +138,8 @@ function coerceFootActionKind(value: unknown): FootActionKind {
  *
  * 作用：
  * - 防止外部 JSON 把未知目标类型塞进执行链路。
+ *
+ * @param value 需要校验并转换为 FootTargetKind 的未知输入值。
  */
 function coerceFootTargetKind(value: unknown): FootTargetKind {
   if (typeof value === "string" && footTargetKinds.has(value as FootTargetKind)) {
@@ -148,6 +156,9 @@ function coerceFootTargetKind(value: unknown): FootTargetKind {
  *
  * 作用：
  * - 保证风险等级只会是 F0、F1、F2 或 F3。
+ *
+ * @param value 需要校验并转换为 FootRiskLevel 的未知输入值。
+ * @param fallback 输入无法解析时使用的回退值。
  */
 function coerceFootRiskLevel(value: unknown, fallback: FootRiskLevel): FootRiskLevel {
   if (typeof value === "string" && footRiskLevels.has(value as FootRiskLevel)) {
@@ -164,6 +175,9 @@ function coerceFootRiskLevel(value: unknown, fallback: FootRiskLevel): FootRiskL
  *
  * 作用：
  * - 限制命令最长运行时间，避免脚能力第一阶段变成长期进程管理器。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 function normalizeTimeoutMs(value: unknown, config: AppConfig): number {
   const configured = Number(config.security?.commandTimeoutMs || DEFAULT_TIMEOUT_MS);
@@ -180,6 +194,8 @@ function normalizeTimeoutMs(value: unknown, config: AppConfig): number {
  *
  * 作用：
  * - 保持 riskFlags 稳定、简洁，避免审计记录里重复出现同一标记。
+ *
+ * @param values 需要批量归一化、去重、替换或格式化的值集合。
  */
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort();
@@ -193,6 +209,8 @@ function uniqueStrings(values: string[]): string[] {
  *
  * 作用：
  * - 把 start_service、stop_process 和外部服务先挡在第一阶段之外。
+ *
+ * @param action 当前要校验、解析、预览或执行的单个动作。
  */
 function isSupportedFootAction(action: FootAction): boolean {
   return (
@@ -215,6 +233,8 @@ function isSupportedFootAction(action: FootAction): boolean {
  * 边界：
  * - 不运行命令。
  * - 不判断 cwd 是否逃出 workspace；路径安全由 resolveFootCwd 负责。
+ *
+ * @param value 需要校验并转换为 FootAction 的未知输入值。
  */
 export function coerceFootAction(value: unknown): FootAction {
   if (!isJsonObject(value)) {
@@ -250,6 +270,8 @@ export function coerceFootAction(value: unknown): FootAction {
  * 作用：
  * - 自动补齐 id、kind、targetKind、cwd、原因和摘要。
  * - 保证内部创建的 action 也经过 coerceFootAction 的同一套校验。
+ *
+ * @param input 创建 FootAction 所需的结构化输入。
  */
 export function createFootAction(input: Partial<FootAction> & { command: string }): FootAction {
   return coerceFootAction({
@@ -277,6 +299,8 @@ export function createFootAction(input: Partial<FootAction> & { command: string 
  * 边界：
  * - 不运行命令。
  * - 不记录 store。
+ *
+ * @param value 需要校验并转换为 FootPlan 的未知输入值。
  */
 export function coerceFootPlan(value: unknown): FootPlan {
   if (!isJsonObject(value)) {
@@ -317,6 +341,8 @@ export function coerceFootPlan(value: unknown): FootPlan {
  * 边界：
  * - 不运行命令。
  * - 不绕过审批。
+ *
+ * @param input 创建 FootPlan 所需的结构化输入。
  */
 export function createFootPlan(input: CreateFootPlanInput): FootPlan {
   const actions = input.actions.map((action) => coerceFootAction(action));
@@ -344,6 +370,8 @@ export function createFootPlan(input: CreateFootPlanInput): FootPlan {
  * 作用：
  * - 把命令文本、动作类型和目标类型转成可解释的风险标签。
  * - 让用户和审计日志能看懂为什么某个命令需要审批或被拒绝。
+ *
+ * @param actions 组成计划并用于风险判断或批量处理的动作列表。
  */
 export function detectFootRiskFlags(actions: FootAction[]): string[] {
   const flags: string[] = [];
@@ -376,6 +404,9 @@ export function detectFootRiskFlags(actions: FootAction[]): string[] {
  * 作用：
  * - 把风险标记合并成 F0-F3 等级，供审批策略和 UI 使用。
  * - 风险等级只描述危险程度，不代表一定会执行。
+ *
+ * @param actions 组成计划并用于风险判断或批量处理的动作列表。
+ * @param riskFlags 风险检测阶段生成、用于推导最终风险等级的标记集合。
  */
 export function inferFootRisk(actions: FootAction[], riskFlags: string[] = detectFootRiskFlags(actions)): FootRiskLevel {
   if (actions.length === 0) return "F0";
@@ -415,6 +446,9 @@ export function inferFootRisk(actions: FootAction[], riskFlags: string[] = detec
  *
  * 边界：
  * - 只校验 cwd，不解释命令本身是否会访问外部路径。
+ *
+ * @param action 当前要校验、解析、预览或执行的单个动作。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export function resolveFootCwd(action: FootAction, config: AppConfig): ResolvedFootAction {
   const workspace = resolveWorkspace(config);
@@ -441,6 +475,9 @@ export function resolveFootCwd(action: FootAction, config: AppConfig): ResolvedF
  * 作用：
  * - 展示命令、cwd、timeout、风险等级和是否会执行。
  * - 在不启动进程的情况下，让用户先看到脚准备怎么走。
+ *
+ * @param action 当前要校验、解析、预览或执行的单个动作。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 function createActionPreview(action: FootAction, config: AppConfig): FootActionPreview {
   const flags = detectFootRiskFlags([action]);
@@ -486,6 +523,9 @@ function createActionPreview(action: FootAction, config: AppConfig): FootActionP
  * 边界：
  * - 不运行命令。
  * - 不创建后台进程。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function createFootPreview(plan: FootPlan, config: AppConfig | null = null): Promise<FootPreview> {
   const activeConfig = config || (await loadConfig());
@@ -521,6 +561,9 @@ export async function createFootPreview(plan: FootPlan, config: AppConfig | null
  * 作用：
  * - 集中表达第一阶段自动执行策略。
  * - 当前第一阶段为了安全，任何真实进程执行都不自动放行。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
  */
 export function canAutoExecuteFootPlan(plan: FootPlan, preview: FootPreview): boolean {
   return plan.actions.length === 0 && preview.riskLevel === "F0";
@@ -535,6 +578,10 @@ export function canAutoExecuteFootPlan(plan: FootPlan, preview: FootPreview): bo
  * 作用：
  * - 用标准 FootResult 记录“没有启动进程”的事实。
  * - 防止嘴巴把被拒绝的命令误报成已经运行。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
+ * @param reason 拒绝、失败、风险判断或状态变化的原因说明。
  */
 export function createRejectedFootResult(plan: FootPlan, preview: FootPreview | null, reason: string): FootResult {
   return {
@@ -557,6 +604,10 @@ export function createRejectedFootResult(plan: FootPlan, preview: FootPreview | 
  * 作用：
  * - 将未知异常转换成安全、可审计、可展示的 FootResult。
  * - 避免把 token、password 或 authorization 原文写入结果。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
+ * @param error 捕获到的未知错误或进程错误对象。
  */
 export function createFailedFootResult(plan: FootPlan, preview: FootPreview | null, error: unknown): FootResult {
   return {
@@ -579,6 +630,8 @@ export function createFailedFootResult(plan: FootPlan, preview: FootPreview | nu
  * 作用：
  * - 避免常见 key、token、password 和 bearer token 原文进入审计日志。
  * - 这是启发式保护，不替代更强的 secret scanner。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function redactSensitiveOutput(value: string): string {
   return value
@@ -597,6 +650,8 @@ function redactSensitiveOutput(value: string): string {
  * 作用：
  * - 防止单次命令把过大的日志写入本地 store。
  * - 保留开头内容和截断提示，方便用户判断结果。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function truncateOutput(value: string): string {
   if (value.length <= MAX_OUTPUT_CHARS) return value;
@@ -611,6 +666,8 @@ function truncateOutput(value: string): string {
  *
  * 作用：
  * - 将 Node 的 Error.code 统一转成 number 或 null，方便 FootCommandResult 展示。
+ *
+ * @param error 捕获到的未知错误或进程错误对象。
  */
 function exitCodeFromError(error: ExecError | null): number | null {
   if (!error) return 0;
@@ -625,6 +682,8 @@ function exitCodeFromError(error: ExecError | null): number | null {
  *
  * 作用：
  * - 把 Node exec 的 killed、signal 和错误消息统一收敛成 timedOut 布尔值。
+ *
+ * @param error 捕获到的未知错误或进程错误对象。
  */
 function didCommandTimeOut(error: ExecError | null): boolean {
   if (!error) return false;
@@ -644,6 +703,8 @@ function didCommandTimeOut(error: ExecError | null): boolean {
  * 边界：
  * - 不做审批判断，调用前必须已经经过 executeFootPlan 的 policy gate。
  * - 不支持交互式 stdin。
+ *
+ * @param resolved 已经通过边界校验并补齐绝对路径等信息的动作。
  */
 async function runFootCommand(resolved: ResolvedFootAction): Promise<FootCommandResult> {
   const started = Date.now();
@@ -685,6 +746,8 @@ async function runFootCommand(resolved: ResolvedFootAction): Promise<FootCommand
  *
  * 作用：
  * - 将第一阶段不支持的场景集中阻断，避免分散在多处 if 判断中。
+ *
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
  */
 function blockingPreviewReason(preview: FootPreview): string | null {
   const blockingFlags = ["shell_disabled", "unsupported_action", "workspace_escape"];
@@ -708,6 +771,11 @@ function blockingPreviewReason(preview: FootPreview): string | null {
  * - 没有 preview 不执行。
  * - preview 不匹配 plan 不执行。
  * - 未审批的真实进程不执行。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
+ * @param options 控制当前方法可选行为、依赖或执行策略的配置对象。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function executeFootPlan(
   plan: FootPlan,
@@ -812,6 +880,8 @@ export async function executeFootPlan(
  * 作用：
  * - 把多个 FootCommandResult 合并成适合展示和 tool output 的文本。
  * - 保留命令、cwd、exit code、duration 和输出。
+ *
+ * @param results 需要汇总、格式化或返回的多个能力结果。
  */
 function formatCommandResults(results: FootCommandResult[]): string {
   return results
@@ -837,6 +907,8 @@ function formatCommandResults(results: FootCommandResult[]): string {
  * 作用：
  * - 让旧的工具面板仍能收到普通文本输出。
  * - 同时保留脚能力内部的结构化 FootResult 和 audit。
+ *
+ * @param result 当前要格式化、返回、审计或持久化的能力结果。
  */
 export function formatFootResultOutput(result: FootResult): string {
   if (result.output) return result.output;
@@ -857,6 +929,10 @@ export function formatFootResultOutput(result: FootResult): string {
  *
  * 边界：
  * - 如果未传 approved 且计划需要审批，会记录 rejected result，而不是执行命令。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param options 控制当前方法可选行为、依赖或执行策略的配置对象。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function executeAndRecordFootPlan(
   input: CreateFootPlanInput | FootPlan,

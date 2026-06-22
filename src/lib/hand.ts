@@ -109,6 +109,8 @@ interface ActionContentSnapshot {
  *
  * 作用：
  * - 避免把 null、数组或字符串当成可读取字段的对象。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function isJsonObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -122,6 +124,8 @@ function isJsonObject(value: unknown): value is JsonObject {
  *
  * 作用：
  * - 只接受真正的字符串，并自动裁剪首尾空白。
+ *
+ * @param value 需要尝试解析为 String 的未知可选值；无法识别时返回 undefined。
  */
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -135,6 +139,8 @@ function optionalString(value: unknown): string | undefined {
  *
  * 作用：
  * - 确保动作类型只会落在 HandActionKind 定义的集合内。
+ *
+ * @param value 需要校验并转换为 HandActionKind 的未知输入值。
  */
 function coerceHandActionKind(value: unknown): HandActionKind {
   if (typeof value === "string" && handActionKinds.has(value as HandActionKind)) {
@@ -151,6 +157,8 @@ function coerceHandActionKind(value: unknown): HandActionKind {
  *
  * 作用：
  * - 防止未知目标类型进入修改链路。
+ *
+ * @param value 需要校验并转换为 HandTargetKind 的未知输入值。
  */
 function coerceHandTargetKind(value: unknown): HandTargetKind {
   if (typeof value === "string" && handTargetKinds.has(value as HandTargetKind)) {
@@ -167,6 +175,9 @@ function coerceHandTargetKind(value: unknown): HandTargetKind {
  *
  * 作用：
  * - 保证风险等级只会是 H0、H1、H2 或 H3。
+ *
+ * @param value 需要校验并转换为 HandRiskLevel 的未知输入值。
+ * @param fallback 输入无法解析时使用的回退值。
  */
 function coerceHandRiskLevel(value: unknown, fallback: HandRiskLevel): HandRiskLevel {
   if (typeof value === "string" && handRiskLevels.has(value as HandRiskLevel)) {
@@ -183,6 +194,8 @@ function coerceHandRiskLevel(value: unknown, fallback: HandRiskLevel): HandRiskL
  *
  * 作用：
  * - 保持 riskFlags 稳定、简洁，避免审计记录里重复出现同一标记。
+ *
+ * @param values 需要批量归一化、去重、替换或格式化的值集合。
  */
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort();
@@ -197,6 +210,8 @@ function uniqueStrings(values: string[]): string[] {
  * 作用：
  * - 避免常见 key、token、password 和 bearer token 原文进入审计日志。
  * - 这是启发式保护，不替代完整 secret scanner。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function redactSensitiveText(value: string): string {
   return value
@@ -214,6 +229,8 @@ function redactSensitiveText(value: string): string {
  *
  * 作用：
  * - 把 delete、move、external object、database record 等完整版动作先挡在第一阶段之外。
+ *
+ * @param action 当前要校验、解析、预览或执行的单个动作。
  */
 function isSupportedHandAction(action: HandAction): boolean {
   return supportedActionKinds.has(action.kind) && supportedTargetKinds.has(action.targetKind);
@@ -234,6 +251,8 @@ function isSupportedHandAction(action: HandAction): boolean {
  * - 不读取文件。
  * - 不写文件。
  * - 不判断目标路径是否逃出 workspace；路径安全由 resolveHandTarget 负责。
+ *
+ * @param value 需要校验并转换为 HandAction 的未知输入值。
  */
 export function coerceHandAction(value: unknown): HandAction {
   if (!isJsonObject(value)) {
@@ -271,6 +290,8 @@ export function coerceHandAction(value: unknown): HandAction {
  *
  * 作用：
  * - 为完整版手能力预留 rollback 字段，同时保证第一阶段不会出现未知策略。
+ *
+ * @param value 需要校验并转换为 RollbackStrategy 的未知输入值。
  */
 function coerceRollbackStrategy(value: unknown): HandRollbackStrategy | undefined {
   if (
@@ -294,6 +315,8 @@ function coerceRollbackStrategy(value: unknown): HandRollbackStrategy | undefine
  * 作用：
  * - 自动补齐 id、kind、targetKind、原因和摘要。
  * - 保证内部创建的 action 也经过 coerceHandAction 的同一套校验。
+ *
+ * @param input 创建 HandAction 所需的结构化输入。
  */
 export function createHandAction(input: Partial<HandAction> & { target: string; content?: string }): HandAction {
   return coerceHandAction({
@@ -320,6 +343,8 @@ export function createHandAction(input: Partial<HandAction> & { target: string; 
  * 边界：
  * - 不读取文件。
  * - 不写文件。
+ *
+ * @param value 需要校验并转换为 HandPlan 的未知输入值。
  */
 export function coerceHandPlan(value: unknown): HandPlan {
   if (!isJsonObject(value)) {
@@ -361,6 +386,8 @@ export function coerceHandPlan(value: unknown): HandPlan {
  * 边界：
  * - 不直接写文件。
  * - 不绕过 preview。
+ *
+ * @param input 创建 HandPlan 所需的结构化输入。
  */
 export function createHandPlan(input: CreateHandPlanInput): HandPlan {
   const actions = input.actions.map((action) => coerceHandAction(action));
@@ -388,6 +415,8 @@ export function createHandPlan(input: CreateHandPlanInput): HandPlan {
  *
  * 作用：
  * - 给 HandPlan 提供一个稳定的 targetKind，方便 UI 和审计快速理解修改目标。
+ *
+ * @param actions 组成计划并用于风险判断或批量处理的动作列表。
  */
 function inferPlanTargetKind(actions: HandAction[]): HandTargetKind {
   if (actions.some((action) => action.targetKind === "external_object")) return "external_object";
@@ -409,6 +438,8 @@ function inferPlanTargetKind(actions: HandAction[]): HandTargetKind {
  * 作用：
  * - 把动作类型、目标类型、目标路径和内容规模转成可解释的风险标签。
  * - 风险标签是解释依据，不直接替代最终 policy gate。
+ *
+ * @param actions 组成计划并用于风险判断或批量处理的动作列表。
  */
 export function detectHandRiskFlags(actions: HandAction[]): string[] {
   const flags: string[] = [];
@@ -450,6 +481,9 @@ export function detectHandRiskFlags(actions: HandAction[]): string[] {
  * 作用：
  * - 把动作类型、目标类型、风险标记合成 H0-H3。
  * - 风险等级只决定 policy，不代表一定能执行。
+ *
+ * @param actions 组成计划并用于风险判断或批量处理的动作列表。
+ * @param riskFlags 风险检测阶段生成、用于推导最终风险等级的标记集合。
  */
 export function inferHandRisk(actions: HandAction[], riskFlags: string[] = detectHandRiskFlags(actions)): HandRiskLevel {
   if (actions.length === 0) return "H0";
@@ -490,6 +524,9 @@ export function inferHandRisk(actions: HandAction[], riskFlags: string[] = detec
  * 边界：
  * - 第一阶段只解析本地文件路径。
  * - 外部对象、数据库和 GUI 状态会在 policy 中被拒绝。
+ *
+ * @param action 当前要校验、解析、预览或执行的单个动作。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export function resolveHandTarget(action: HandAction, config: AppConfig): ResolvedHandTarget {
   const workspace = resolveWorkspace(config);
@@ -529,6 +566,8 @@ export function resolveHandTarget(action: HandAction, config: AppConfig): Resolv
  * 作用：
  * - 判断 preview 之后目标内容是否变化。
  * - 这不是权限校验，只是内容一致性检测。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 export function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -543,6 +582,8 @@ export function hashText(text: string): string {
  * 作用：
  * - 识别 .env、密钥文件、凭证文件等高风险目标。
  * - 只能做启发式判断，不能保证覆盖所有秘密文件。
+ *
+ * @param target 需要解析、读取、修改、执行或校验的目标。
  */
 export function isSecretLikeTarget(target: string): boolean {
   return secretLikeTargetPattern.test(target);
@@ -557,6 +598,8 @@ export function isSecretLikeTarget(target: string): boolean {
  * 作用：
  * - 避免把二进制文件当文本写坏。
  * - 第一阶段遇到可疑二进制应保守拒绝。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 export function isProbablyBinaryText(text: string): boolean {
   return text.includes("\0");
@@ -571,6 +614,8 @@ export function isProbablyBinaryText(text: string): boolean {
  * 作用：
  * - 读取旧内容、准备新内容、计算 hash、检测二进制和大修改风险。
  * - 把文件状态固定成 apply 阶段可以校验的快照。
+ *
+ * @param resolved 已经通过边界校验并补齐绝对路径等信息的动作。
  */
 async function readActionContentSnapshot(resolved: ResolvedHandTarget): Promise<ActionContentSnapshot> {
   const riskFlags = [...resolved.riskFlags];
@@ -613,6 +658,11 @@ async function readActionContentSnapshot(resolved: ResolvedHandTarget): Promise<
  * 作用：
  * - 生成给用户和 audit 查看的一致 diff 文本。
  * - 第一阶段实现稳定、可读的行级 diff，不追求最短 diff。
+ *
+ * @param oldText 生成 diff 或比较修改前的原始文本。
+ * @param newText 生成 diff 或应用修改后的目标文本。
+ * @param oldLabel 生成 diff 时展示的旧内容标签。
+ * @param newLabel 生成 diff 时展示的新内容标签。
  */
 export function createUnifiedDiff(oldText: string, newText: string, oldLabel: string, newLabel: string): string {
   const oldLines = oldText.length ? oldText.split(/\r?\n/) : [];
@@ -635,6 +685,9 @@ export function createUnifiedDiff(oldText: string, newText: string, oldLabel: st
  * 作用：
  * - 生成 diff、hash、风险标记和回滚策略。
  * - 不写文件，只读取当前目标状态。
+ *
+ * @param action 当前要校验、解析、预览或执行的单个动作。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 async function createActionPreview(action: HandAction, config: AppConfig): Promise<HandActionPreview> {
   let resolved: ResolvedHandTarget;
@@ -701,6 +754,9 @@ async function createActionPreview(action: HandAction, config: AppConfig): Promi
  * 边界：
  * - 只读文件，不写文件。
  * - 无法 preview 的修改不能自动 apply。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function createHandPreview(plan: HandPlan, config: AppConfig | null = null): Promise<HandPreview> {
   const activeConfig = config || (await loadConfig());
@@ -739,6 +795,9 @@ export async function createHandPreview(plan: HandPlan, config: AppConfig | null
  * 作用：
  * - 把自动应用策略集中到一个地方。
  * - 返回 true 只代表 policy 允许，不代表写入一定成功。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
  */
 export function canAutoApplyHandPlan(plan: HandPlan, preview: HandPreview): boolean {
   return (
@@ -768,6 +827,10 @@ export function canAutoApplyHandPlan(plan: HandPlan, preview: HandPreview): bool
  * 作用：
  * - 用标准 HandResult 记录“没有修改”的事实。
  * - 防止嘴巴把被拒绝的修改误报成已经应用。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
+ * @param reason 拒绝、失败、风险判断或状态变化的原因说明。
  */
 export function createRejectedHandResult(plan: HandPlan, preview: HandPreview | null, reason: string): HandResult {
   return {
@@ -792,6 +855,10 @@ export function createRejectedHandResult(plan: HandPlan, preview: HandPreview | 
  * 作用：
  * - 将未知异常转换成安全、可审计、可展示的 HandResult。
  * - 避免把 token、password 或 authorization 原文写入结果。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
+ * @param error 捕获到的未知错误或进程错误对象。
  */
 export function createFailedHandResult(plan: HandPlan, preview: HandPreview | null, error: unknown): HandResult {
   return {
@@ -815,6 +882,8 @@ export function createFailedHandResult(plan: HandPlan, preview: HandPreview | nu
  *
  * 作用：
  * - 将不支持动作、workspace escape、二进制和无法预览集中阻断。
+ *
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
  */
 function blockingPreviewReason(preview: HandPreview): string | null {
   const blockingFlags = ["workspace_escape", "unsupported_action", "binary_file", "no_preview_available"];
@@ -830,6 +899,9 @@ function blockingPreviewReason(preview: HandPreview): string | null {
  *
  * 作用：
  * - 确保所有会写入的动作都有对应 preview 和 hash。
+ *
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
+ * @param actionId 用于关联动作、预览和执行结果的动作唯一标识。
  */
 function findActionPreview(preview: HandPreview, actionId: string): HandActionPreview | null {
   return preview.actionPreviews.find((item) => item.actionId === actionId) || null;
@@ -850,6 +922,11 @@ function findActionPreview(preview: HandPreview, actionId: string): HandActionPr
  * - 没有 preview 不应用。
  * - preview stale 不应用。
  * - H2/H3 没有批准不应用。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param preview 计划执行前生成的预览，用于风险判断和审批绑定。
+ * @param options 控制当前方法可选行为、依赖或执行策略的配置对象。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function applyHandPlan(
   plan: HandPlan,
@@ -938,6 +1015,10 @@ export async function applyHandPlan(
  *
  * 边界：
  * - 如果未传 approved 且计划需要审批，会记录 rejected result，而不是写文件。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param options 控制当前方法可选行为、依赖或执行策略的配置对象。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function executeAndRecordHandPlan(
   input: CreateHandPlanInput | HandPlan,

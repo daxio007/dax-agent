@@ -84,6 +84,8 @@ interface TextReadPayload {
  * 作用：
  * - 把外部 JSON 收敛成内部稳定结构。
  * - 避免 API 层到处散落字段校验逻辑。
+ *
+ * @param value 需要校验并转换为 ReadSource 的未知输入值。
  */
 export function coerceReadSource(value: unknown): ReadSource {
   if (!isJsonObject(value)) {
@@ -116,6 +118,11 @@ export function coerceReadSource(value: unknown): ReadSource {
  * 作用：
  * - 让调用方不用手写 ReadSource 对象。
  * - 让来源创建保持统一字段和默认值。
+ *
+ * @param kind 当前方法要解析、判断或创建的类别标识。
+ * @param target 需要解析、读取、修改、执行或校验的目标。
+ * @param purpose 调用方声明的读取、表达或动作业务目的。
+ * @param required 该需求或条件是否必须满足。
  */
 export function createReadSource(
   kind: ReadSourceKind,
@@ -137,6 +144,9 @@ export function createReadSource(
  * 作用：
  * - 固定“为什么读、读哪里、读多少、风险多高”的决策记录。
  * - 给执行层、审计层和 UI 层提供同一份计划结构。
+ *
+ * @param input 创建 ReadPlan 所需的结构化输入。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export function createReadPlan(input: CreateReadPlanInput, config: AppConfig | null = null): ReadPlan {
   const sources = input.sources.map((source) => coerceReadSource(source));
@@ -168,6 +178,8 @@ export function createReadPlan(input: CreateReadPlanInput, config: AppConfig | n
  * 作用：
  * - 风险等级不是阻止读取，而是提醒上下文过滤和长期记忆要谨慎。
  * - L1 普通读取，L2 敏感读取，L3 高敏或大范围读取。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
  */
 export function inferReadRisk(source: ReadSource): ReadRiskLevel {
   let risk: ReadRiskLevel = "L1";
@@ -204,6 +216,10 @@ export function inferReadRisk(source: ReadSource): ReadRiskLevel {
  * 作用：
  * - 给 ReadResult 和 ContextBlock 标记潜在风险。
  * - 让 Context Filter 能决定是否脱敏、摘要或限制进入工作上下文的内容。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
+ * @param content 调用方提供、需要解析、保存、表达或发送的正文内容。
+ * @param extraFlags 调用方额外提供、需要合并到结果中的风险标记。
  */
 export function detectRiskFlags(source: ReadSource, content = "", extraFlags: string[] = []): string[] {
   const flags = new Set(extraFlags);
@@ -242,6 +258,8 @@ export function detectRiskFlags(source: ReadSource, content = "", extraFlags: st
  * 作用：
  * - 提供一个轻量级体积指标。
  * - 当前实现使用字符数除以四的近似值，后续可替换为真实 tokenizer。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
@@ -257,6 +275,8 @@ export function estimateTokens(text: string): number {
  * 作用：
  * - 给后续规划和记忆层提供“读到了什么”的粗略索引。
  * - 这不是最终理解，只是第一阶段的轻量提取。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 export function extractSignals(text: string): string[] {
   const signals = new Set<string>();
@@ -282,6 +302,9 @@ export function extractSignals(text: string): string[] {
  * 作用：
  * - 防止大文件直接塞进模型上下文。
  * - 保留开头和结尾，让 Agent 仍能看到结构和收尾信息。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param maxChars 输出允许保留的最大字符数。
  */
 export function summarizeForContext(text: string, maxChars = SUMMARY_MAX_CHARS): string {
   const clean = text.trim();
@@ -301,6 +324,8 @@ export function summarizeForContext(text: string, maxChars = SUMMARY_MAX_CHARS):
  * 作用：
  * - 统一做截断、摘要、脱敏、可信度和新鲜度标记。
  * - 把“看见的内容”和“进入工作记忆的内容”分开。
+ *
+ * @param result 当前要格式化、返回、审计或持久化的能力结果。
  */
 export function createContextBlock(result: ReadResult): ContextBlock {
   const isSensitive = result.riskLevel === "L2" || result.riskLevel === "L3";
@@ -328,6 +353,11 @@ export function createContextBlock(result: ReadResult): ContextBlock {
  * 作用：
  * - 第一阶段统一本地文本读取入口。
  * - 不做逐次审批，但会限制读取字节数并标记敏感风险。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
+ * @param planId 用于关联计划、读取结果和审计记录的计划唯一标识。
+ * @param maxBytes 允许读取的最大字节数；超出部分会被截断或拒绝。
  */
 export async function readLocalText(
   source: ReadSource,
@@ -355,6 +385,11 @@ export async function readLocalText(
  * 作用：
  * - 让“眼睛”具备读取公开网页和官方文档的能力。
  * - 自动保留来源 URL、content-type、外部来源和未验证内容标记。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
+ * @param allowNetwork 是否允许本次读取或执行访问网络资源。
+ * @param planId 用于关联计划、读取结果和审计记录的计划唯一标识。
+ * @param maxBytes 允许读取的最大字节数；超出部分会被截断或拒绝。
  */
 export async function readWebPage(
   source: ReadSource,
@@ -400,6 +435,9 @@ export async function readWebPage(
  * 作用：
  * - 帮 Agent 理解当前电脑能运行什么、Node 版本是什么、系统资源大致如何。
  * - 电脑配置默认可读，但会被标记为 local_system_state。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
+ * @param planId 用于关联计划、读取结果和审计记录的计划唯一标识。
  */
 export async function readComputerConfig(source: ReadSource, planId?: string): Promise<ReadResult> {
   const includeEnvValues = /\benv-values\b/i.test(source.target);
@@ -452,6 +490,11 @@ export async function readComputerConfig(source: ReadSource, planId?: string): P
  * 作用：
  * - 作为“先找到应该看哪里”的第一阶段搜索能力。
  * - 只搜索 workspace 内的普通文本文件，不做全盘扫描。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
+ * @param planId 用于关联计划、读取结果和审计记录的计划唯一标识。
+ * @param maxFiles 递归扫描时允许收集的最大文件数量。
  */
 export async function searchWorkspaceText(
   source: ReadSource,
@@ -500,6 +543,10 @@ export async function searchWorkspaceText(
  * 作用：
  * - 把不同来源映射到对应读取方法。
  * - 对尚未接入的应用内容、通信、日历和 MCP resource 给出明确错误。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function executeReadSource(
   source: ReadSource,
@@ -540,6 +587,9 @@ export async function executeReadSource(
  * 作用：
  * - 把 ReadPlan 转成 ReadResult[] 和 ContextBlock[]。
  * - 对 optional source 读取失败会跳过，对 required source 失败会抛错。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function executeReadPlan(
   plan: ReadPlan,
@@ -570,6 +620,9 @@ export async function executeReadPlan(
  * 作用：
  * - 满足“默认能看，逐次不问，但必须可审计”的设计原则。
  * - 让 DAX Agent 未来能回忆自己看过哪些来源。
+ *
+ * @param plan 已经创建、待预览、审批、执行或表达的能力计划。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 export async function executeAndRecordReadPlan(
   plan: ReadPlan,
@@ -624,6 +677,8 @@ export async function executeAndRecordReadPlan(
  *
  * 作用：
  * - 缩小 TypeScript 类型，避免直接访问 unknown 字段。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function isJsonObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -637,6 +692,8 @@ function isJsonObject(value: unknown): value is JsonObject {
  *
  * 作用：
  * - 保证 maxBytes、maxFiles 这类读取边界始终是正数。
+ *
+ * @param values 需要批量归一化、去重、替换或格式化的值集合。
  */
 function positiveNumber(...values: Array<number | undefined>): number {
   for (const value of values) {
@@ -653,6 +710,8 @@ function positiveNumber(...values: Array<number | undefined>): number {
  *
  * 作用：
  * - 让计划风险等于所有来源中最敏感的那个来源。
+ *
+ * @param levels 需要比较并汇总为最高风险的等级列表。
  */
 function maxRiskLevel(levels: ReadRiskLevel[]): ReadRiskLevel {
   return levels.reduce<ReadRiskLevel>((current, next) => {
@@ -668,6 +727,8 @@ function maxRiskLevel(levels: ReadRiskLevel[]): ReadRiskLevel {
  *
  * 作用：
  * - 不阻止读取，但提醒这是高敏或大范围观察。
+ *
+ * @param target 需要解析、读取、修改、执行或校验的目标。
  */
 function looksLikeWholeDiskTarget(target: string): boolean {
   const trimmed = target.trim();
@@ -684,6 +745,9 @@ function looksLikeWholeDiskTarget(target: string): boolean {
  * 作用：
  * - 贯彻“读文件默认可以读”的设计，不把读取限制在项目目录。
  * - 同时给 workspace 场景保留相对路径的便利。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 function resolveReadPath(source: ReadSource, config: AppConfig): string {
   if (source.kind === "runtime" && source.target === "store") {
@@ -704,6 +768,10 @@ function resolveReadPath(source: ReadSource, config: AppConfig): string {
  * 作用：
  * - 让眼睛既能看文件，也能先看目录结构。
  * - 目录读取只列出一层，不做递归全盘扫描。
+ *
+ * @param target 需要解析、读取、修改、执行或校验的目标。
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 async function readDirectoryPayload(target: string, source: ReadSource, config: AppConfig): Promise<TextReadPayload> {
   const maxFiles = config.security?.maxSearchResults || DEFAULT_MAX_FILES;
@@ -732,6 +800,10 @@ async function readDirectoryPayload(target: string, source: ReadSource, config: 
  * 作用：
  * - 避免大文件一次性进入内存或上下文。
  * - 如果文件被截断，会添加 large_file_truncated 风险标记。
+ *
+ * @param target 需要解析、读取、修改、执行或校验的目标。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
+ * @param maxBytes 允许读取的最大字节数；超出部分会被截断或拒绝。
  */
 async function readFilePayload(target: string, config: AppConfig, maxBytes?: number): Promise<TextReadPayload> {
   const limit = positiveNumber(maxBytes, config.security?.maxReadBytes, DEFAULT_MAX_BYTES);
@@ -768,6 +840,10 @@ async function readFilePayload(target: string, config: AppConfig, maxBytes?: num
  *
  * 作用：
  * - 统一补齐 id、createdAt、riskLevel、riskFlags、signals 和 tokenEstimate。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
+ * @param payload 需要返回、分析或写入的结构化载荷。
+ * @param planId 用于关联计划、读取结果和审计记录的计划唯一标识。
  */
 function createReadResult(source: ReadSource, payload: TextReadPayload, planId?: string): ReadResult {
   const riskFlags = detectRiskFlags(source, payload.content, payload.riskFlags);
@@ -797,6 +873,8 @@ function createReadResult(source: ReadSource, payload: TextReadPayload, planId?:
  * 作用：
  * - 给图片、压缩包等非文本文件添加 likely_binary_content 标记。
  * - 第一阶段仍返回 UTF-8 解码文本，未来可接入 OCR 或转写。
+ *
+ * @param buffer 需要检测是否包含二进制内容的原始字节缓冲区。
  */
 function looksBinary(buffer: Buffer): boolean {
   const sampleLength = Math.min(buffer.length, 8000);
@@ -814,6 +892,8 @@ function looksBinary(buffer: Buffer): boolean {
  *
  * 作用：
  * - 让 ReadResult 带上基础内容类型，便于 UI 和未来解析器选择处理方式。
+ *
+ * @param filePath 需要读取、识别 MIME 或执行路径校验的文件路径。
  */
 function mimeTypeForPath(filePath: string): string {
   const extension = path.extname(filePath).toLowerCase();
@@ -843,6 +923,8 @@ function mimeTypeForPath(filePath: string): string {
  * 作用：
  * - 去掉 script、style 和标签，让网页先以普通文本进入读取结果。
  * - 这只是第一阶段的轻量解析，未来可替换为更可靠的 DOM/Readability 解析。
+ *
+ * @param html 需要去除标签并转换为纯文本的 HTML 内容。
  */
 function stripHtml(html: string): string {
   return html
@@ -866,6 +948,9 @@ function stripHtml(html: string): string {
  * 作用：
  * - 让读取结果保持在可控体积内。
  * - 在结尾标记 omitted 字符数，方便审计读取范围。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param maxChars 输出允许保留的最大字符数。
  */
 function truncateText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
@@ -881,6 +966,8 @@ function truncateText(text: string, maxChars: number): string {
  * 作用：
  * - 减少 API key、token、password 等明文进入模型上下文的概率。
  * - 原始 ReadResult 仍保留在本次本地返回值中，不会被长期保存。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function maskSensitiveText(text: string): string {
   return text
@@ -901,6 +988,8 @@ function maskSensitiveText(text: string): string {
  * 作用：
  * - 本地文件通常更可信，网页和搜索结果默认更低。
  * - 后续可以接入来源信誉、签名和时间戳机制。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
  */
 function trustForSource(source: ReadSource): ContextBlock["trust"] {
   if (source.kind === "web_page" || source.kind === "search") return "low";
@@ -917,6 +1006,8 @@ function trustForSource(source: ReadSource): ContextBlock["trust"] {
  * 作用：
  * - 电脑配置、运行状态和网页读取发生在当前时刻，默认 fresh。
  * - 普通文件没有读取其修改时间进入结构，暂时标记 unknown。
+ *
+ * @param source 当前要读取、转换、评估或建立上下文的来源定义。
  */
 function freshnessForSource(source: ReadSource): ContextBlock["freshness"] {
   if (source.kind === "computer_config" || source.kind === "web_page" || source.kind === "app_state") return "fresh";
@@ -957,6 +1048,11 @@ function networkInterfaceSummary(): JsonObject {
  * 作用：
  * - 给搜索能力提供有限、可审计的候选集合。
  * - 跳过常见构建目录和依赖目录。
+ *
+ * @param root 递归读取或扫描开始时使用的根目录。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
+ * @param maxFiles 递归扫描时允许收集的最大文件数量。
+ * @param results 需要汇总、格式化或返回的多个能力结果。
  */
 async function walkTextFiles(root: string, config: AppConfig, maxFiles: number, results: string[] = []): Promise<string[]> {
   if (results.length >= maxFiles) return results;
@@ -984,6 +1080,8 @@ async function walkTextFiles(root: string, config: AppConfig, maxFiles: number, 
  *
  * 作用：
  * - 新增来源类型时让 TypeScript 提醒我们补实现。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function assertNever(value: never): never {
   throw new Error(`Unhandled read source kind: ${value}`);

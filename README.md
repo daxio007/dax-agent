@@ -90,7 +90,7 @@ This is intentionally a small, inspectable foundation. More channels, richer ski
 
 ## Development checks
 
-Every named TypeScript method must have JSDoc that explains its usage and purpose. See `docs/jsdoc-standard.md` for the complete rules.
+Every named TypeScript method must have JSDoc that explains its usage and purpose, with one descriptive `@param` entry for every parameter. See `docs/jsdoc-standard.md` for the complete rules.
 
 Run these checks before committing source changes:
 

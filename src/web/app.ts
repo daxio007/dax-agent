@@ -127,6 +127,8 @@ function initialLocale(): Locale {
  * 使用方法：初始化 elements 映射时传入稳定 CSS selector。
  * 作用：返回带泛型类型的必需 DOM 元素。
  * 边界：元素缺失会立即抛错，避免后续静默空引用。
+ *
+ * @param selector 用于查找必需 DOM 元素的 CSS 选择器。
  */
 function qs<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -301,6 +303,9 @@ const messages: Record<Locale, Record<TranslationKey, string>> = {
  * 使用方法：渲染界面文案时传入 TranslationKey 和可选插值参数。
  * 作用：按当前 locale 读取模板并替换 `{name}` 占位符。
  * 边界：只处理项目内静态文案，不做自动翻译或 HTML 转义。
+ *
+ * @param key 要读取、翻译、索引或匹配的字段键名。
+ * @param values 需要批量归一化、去重、替换或格式化的值集合。
  */
 function t(key: TranslationKey, values: Record<string, string | number> = {}): string {
   const template = messages[state.locale]?.[key] || messages["zh-CN"][key] || key;
@@ -314,6 +319,8 @@ function t(key: TranslationKey, values: Record<string, string | number> = {}): s
  * 使用方法：渲染 Session 标题时传入存储标题。
  * 作用：把默认英文或中文占位标题转换成当前语言。
  * 边界：非默认标题保持原样，不修改持久化 Session。
+ *
+ * @param title 会话、上下文块或界面项目使用的显示标题。
  */
 function displayTitle(title: string): string {
   if (!title || title === "New session" || title === "新会话") return t("newSessionTitle");
@@ -324,6 +331,8 @@ function displayTitle(title: string): string {
  * 使用方法：渲染聊天消息时传入 MessageRole。
  * 作用：把 user、assistant、system 转换成当前界面语言。
  * 边界：只返回标签，不改变消息角色。
+ *
+ * @param role 消息发送方角色，例如 user、assistant 或 system。
  */
 function displayRole(role: MessageRole): string {
   const map: Record<MessageRole, string> = {
@@ -338,6 +347,8 @@ function displayRole(role: MessageRole): string {
  * 使用方法：渲染 ToolRun 状态徽标时调用。
  * 作用：把内部 ToolStatus 映射到本地化文字。
  * 边界：不推断状态，也不触发审批或轮询。
+ *
+ * @param status HTTP、工具运行或界面状态值。
  */
 function displayStatus(status: ToolStatus): string {
   const map: Record<ToolStatus, TranslationKey> = {
@@ -355,6 +366,9 @@ function displayStatus(status: ToolStatus): string {
  * 使用方法：所有前端 HTTP 请求传入路径和 fetch options。
  * 作用：统一 JSON headers、响应解析和非 2xx 错误转换。
  * 边界：不自动重试或刷新身份；响应必须是 JSON。
+ *
+ * @param path 要请求的站内 API 路径。
+ * @param options 传给 fetch 的请求方法、请求体和可选请求头。
  */
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
@@ -375,6 +389,8 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
  * 使用方法：渲染会话更新时间时传入 ISO 时间字符串。
  * 作用：按当前 locale 输出月、日、小时和分钟。
  * 边界：空值返回空字符串，无效日期由浏览器 Intl 行为决定。
+ *
+ * @param value 需要按当前界面语言格式化的 ISO 时间字符串。
  */
 function formatDate(value: string): string {
   if (!value) return "";
@@ -390,6 +406,8 @@ function formatDate(value: string): string {
  * 使用方法：把消息、工具输出或动态字段写入 innerHTML 前调用。
  * 作用：转义 HTML 特殊字符，降低注入风险。
  * 边界：只适用于文本上下文，不是 URL、CSS 或脚本转义器。
+ *
+ * @param value 需要转换为字符串并进行 HTML 转义的任意值。
  */
 function escapeHtml(value: unknown): string {
   return String(value)
@@ -428,6 +446,8 @@ function renderSessions(): void {
  * 使用方法：打开会话后传入该会话消息列表。
  * 作用：渲染角色和经过转义的消息内容，并滚动到底部。
  * 边界：当前按纯文本展示 Markdown，不执行消息中的 HTML 或脚本。
+ *
+ * @param messages 用于查找上下文、模型推理或界面渲染的消息列表。
  */
 function renderMessages(messages: ChatMessage[]): void {
   elements.messages.innerHTML = "";
@@ -455,6 +475,8 @@ function renderMessages(messages: ChatMessage[]): void {
  * 使用方法：打开会话后传入 ToolRun 列表。
  * 作用：渲染状态、输入、输出和 pending 请求的审批按钮。
  * 边界：按钮只发起 API 请求；不会在浏览器直接执行工具。
+ *
+ * @param toolRuns 当前会话中用于判断待审批状态的工具运行列表。
  */
 function renderTools(toolRuns: ToolRun[]): void {
   const pending = toolRuns.filter((run) => run.status === "pending").length;
@@ -520,6 +542,9 @@ async function loadConfig(): Promise<void> {
  * 使用方法：保存、校验或连接测试过程中传入消息和状态类型。
  * 作用：统一更新设置面板的 aria-live 反馈区域和颜色。
  * 边界：只显示状态，不记录日志或关闭对话框。
+ *
+ * @param message 需要持久化、表达或关联审计的单条消息。
+ * @param kind 当前方法要解析、判断或创建的类别标识。
  */
 function setSettingsFeedback(message = "", kind: "neutral" | "success" | "error" = "neutral"): void {
   elements.settingsFeedback.textContent = message;
@@ -647,6 +672,8 @@ async function loadSessions(): Promise<void> {
  * 使用方法：点击会话或刷新活动会话时传入 sessionId。
  * 作用：加载 SessionDetail 并渲染标题、消息和工具运行。
  * 边界：不会创建会话；不存在时让 API 错误向上抛出。
+ *
+ * @param sessionId 当前聊天会话的唯一标识，用于隔离消息、工具和审计记录。
  */
 async function openSession(sessionId: string): Promise<void> {
   state.activeSessionId = sessionId;
@@ -696,6 +723,8 @@ async function createNewSession(): Promise<void> {
  * 使用方法：聊天 composer 提交时传入 SubmitEvent。
  * 作用：防止重复发送，调用消息 API，并在成功后刷新会话。
  * 边界：失败时恢复输入内容；不在浏览器直接运行 Agent 能力。
+ *
+ * @param event 聊天表单触发的提交事件，用于阻止浏览器默认刷新。
  */
 async function sendMessage(event: SubmitEvent): Promise<void> {
   event.preventDefault();
@@ -760,6 +789,8 @@ function applyLocale(): void {
  * 使用方法：工具列表 click 事件委托传入 MouseEvent。
  * 作用：识别 approve/reject 按钮、调用对应 API 并刷新活动会话。
  * 边界：只处理带 data-action 和 data-id 的按钮，不能绕过后端审批规则。
+ *
+ * @param event 工具列表冒泡上来的点击事件，用于定位审批或拒绝按钮。
  */
 async function handleToolClick(event: MouseEvent): Promise<void> {
   const target = event.target instanceof Element ? event.target : null;
@@ -781,6 +812,8 @@ async function handleToolClick(event: MouseEvent): Promise<void> {
  * 使用方法：设置表单 submit 时调用。
  * 作用：显示保存进度，持久化配置并在对话框内反馈成功或错误。
  * 边界：保存不等于连接成功；需要用户点击测试连接验证端点。
+ *
+ * @param event 设置表单触发的提交事件，用于阻止浏览器默认刷新。
  */
 async function saveSettings(event: SubmitEvent): Promise<void> {
   event.preventDefault();

@@ -114,6 +114,8 @@ interface HttpError extends Error {
  * 使用方法：服务启动时传入 process.argv。
  * 作用：解析 `--port` 等受支持命令行参数形成应用配置覆盖。
  * 边界：未知参数会被忽略，不读取环境变量或配置文件。
+ *
+ * @param argv 启动进程收到的命令行参数列表。
  */
 function parseArgs(argv: string[]): DeepPartial<AppConfig["app"]> {
   const args: DeepPartial<AppConfig["app"]> = {};
@@ -130,6 +132,10 @@ function parseArgs(argv: string[]): DeepPartial<AppConfig["app"]> {
  * 使用方法：API 路由完成后传入响应对象、状态码和 payload。
  * 作用：统一序列化格式、UTF-8 Content-Type 和 Content-Length。
  * 边界：不会自动脱敏 payload；配置等敏感对象必须在调用前处理。
+ *
+ * @param res Node.js 用于写入状态码、响应头和响应体的 HTTP 响应对象。
+ * @param status HTTP、工具运行或界面状态值。
+ * @param payload 需要返回、分析或写入的结构化载荷。
  */
 function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   const body = JSON.stringify(payload, null, 2);
@@ -144,6 +150,10 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
  * 使用方法：静态文件路由返回纯文本错误时调用。
  * 作用：统一发送 UTF-8 文本响应和 Content-Length。
  * 边界：不做 HTML 转义，不应用于输出不可信 HTML。
+ *
+ * @param res Node.js 用于写入状态码、响应头和响应体的 HTTP 响应对象。
+ * @param status HTTP、工具运行或界面状态值。
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function sendText(res: ServerResponse, status: number, text: string): void {
   res.writeHead(status, {
@@ -157,6 +167,8 @@ function sendText(res: ServerResponse, status: number, text: string): void {
  * 使用方法：PUT/POST API 需要 JSON body 时传入 IncomingMessage。
  * 作用：收集请求流、解析 JSON，并把空 body 视为空对象。
  * 边界：只接受可解析 JSON；不处理 multipart、表单或超大请求限流。
+ *
+ * @param req Node.js 接收到的 HTTP 请求对象。
  */
 async function readBody(req: IncomingMessage): Promise<JsonObject> {
   const chunks = [];
@@ -182,6 +194,9 @@ async function readBody(req: IncomingMessage): Promise<JsonObject> {
  * 作用：
  * - 避免每个路由重复创建 Error 并手动挂 statusCode。
  * - 让新增的 read API 和现有错误处理保持同一风格。
+ *
+ * @param message 需要持久化、表达或关联审计的单条消息。
+ * @param statusCode 准备附加到 HTTP 错误或响应上的状态码。
  */
 function createHttpError(message: string, statusCode = 400): HttpError {
   const error: HttpError = new Error(message);
@@ -198,6 +213,8 @@ function createHttpError(message: string, statusCode = 400): HttpError {
  * 作用：
  * - 避免把 undefined、null 或对象误当成字符串。
  * - 保持 API 入参处理简单清楚。
+ *
+ * @param value 需要尝试解析为 String 的未知可选值；无法识别时返回 undefined。
  */
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -211,6 +228,8 @@ function optionalString(value: unknown): string | undefined {
  *
  * 作用：
  * - 保证读取计划中的数量参数不会变成 NaN、负数或 0。
+ *
+ * @param value 需要尝试解析为 PositiveNumber 的未知可选值；无法识别时返回 undefined。
  */
 function optionalPositiveNumber(value: unknown): number | undefined {
   const numberValue = typeof value === "number" ? value : Number(value);
@@ -229,6 +248,9 @@ function optionalPositiveNumber(value: unknown): number | undefined {
  *
  * 边界：
  * - 当前只支持 echo、openai 和 ollama。
+ *
+ * @param value 需要校验并转换为 ModelProvider 的未知输入值。
+ * @param fallback 输入无法解析时使用的回退值。
  */
 function coerceModelProvider(value: unknown, fallback: string): string {
   const provider = optionalString(value) || fallback;
@@ -252,6 +274,8 @@ function coerceModelProvider(value: unknown, fallback: string): string {
  * 边界：
  * - echo 不需要外部配置。
  * - Ollama 允许空 API key；当前 openai Provider 与 providers.ts 保持一致，要求 API key。
+ *
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 function validateModelConfig(config: AppConfig): void {
   if (config.model.provider === "echo") return;
@@ -287,6 +311,8 @@ function validateModelConfig(config: AppConfig): void {
  * 边界：
  * - 空字符串由“留空保留当前密钥”规则处理。
  * - 真正的新密钥只有在不是掩码时才会覆盖旧值。
+ *
+ * @param value 当前要校验、转换、清洗或格式化的输入值。
  */
 function isMaskedApiKey(value: string): boolean {
   return value.includes("*") || /^.{4}\.\.\..{4}$/.test(value);
@@ -301,6 +327,8 @@ function isMaskedApiKey(value: string): boolean {
  * 作用：
  * - 让调用方既可以不传 expectedSignals，也可以传字符串数组。
  * - 自动过滤空字符串和非字符串值。
+ *
+ * @param value 需要尝试解析为 StringArray 的未知可选值；无法识别时返回 undefined。
  */
 function optionalStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -316,6 +344,8 @@ function optionalStringArray(value: unknown): string[] | undefined {
  * 作用：
  * - 统一校验 sources 必须是非空数组。
  * - 复用 read.ts 中的 coerceReadSource，保证 API 和内部代码同一套来源结构。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function readSourcesFromBody(body: JsonObject): ReadSource[] {
   if (!Array.isArray(body.sources) || body.sources.length === 0) {
@@ -334,6 +364,9 @@ function readSourcesFromBody(body: JsonObject): ReadSource[] {
  * 作用：
  * - 让 /api/read/plan 和 /api/read/execute 使用同一套计划创建逻辑。
  * - 固定 no_per_read_approval、风险推断和读取边界。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
+ * @param config 当前生效的应用配置，提供 workspace、模型和安全策略等设置。
  */
 function readPlanFromBody(body: JsonObject, config: AppConfig): ReadPlan {
   const plan = createReadPlan(
@@ -361,6 +394,8 @@ function readPlanFromBody(body: JsonObject, config: AppConfig): ReadPlan {
  *
  * 作用：
  * - 保证 payload 只接收普通对象，避免数组、字符串或 null 混入结构化事件。
+ *
+ * @param value 需要尝试解析为 JsonObject 的未知可选值；无法识别时返回 undefined。
  */
 function optionalJsonObject(value: unknown): JsonObject | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -375,6 +410,8 @@ function optionalJsonObject(value: unknown): JsonObject | undefined {
  *
  * 作用：
  * - 让 API 层只做轻量转换，真正的类型合法性由 listen.ts 校验。
+ *
+ * @param value 需要尝试解析为 ListenEventKind 的未知可选值；无法识别时返回 undefined。
  */
 function optionalListenEventKind(value: unknown): ListenEventKind | undefined {
   return typeof value === "string" ? (value as ListenEventKind) : undefined;
@@ -388,6 +425,8 @@ function optionalListenEventKind(value: unknown): ListenEventKind | undefined {
  *
  * 作用：
  * - 允许调用方显式标记 public、personal 或 sensitive。
+ *
+ * @param value 需要尝试解析为 ListenPrivacyLevel 的未知可选值；无法识别时返回 undefined。
  */
 function optionalListenPrivacyLevel(value: unknown): ListenPrivacyLevel | undefined {
   return value === "public" || value === "personal" || value === "sensitive" ? value : undefined;
@@ -401,6 +440,8 @@ function optionalListenPrivacyLevel(value: unknown): ListenPrivacyLevel | undefi
  *
  * 作用：
  * - 允许 Channel Adapter 对输入来源给出 high、medium 或 low 评级。
+ *
+ * @param value 需要尝试解析为 ListenTrust 的未知可选值；无法识别时返回 undefined。
  */
 function optionalListenTrust(value: unknown): ListenTrust | undefined {
   return value === "high" || value === "medium" || value === "low" ? value : undefined;
@@ -414,6 +455,8 @@ function optionalListenTrust(value: unknown): ListenTrust | undefined {
  *
  * 作用：
  * - 区分“未传入”和“传入 false”，避免默认策略被错误覆盖。
+ *
+ * @param value 需要尝试解析为 Boolean 的未知可选值；无法识别时返回 undefined。
  */
 function optionalBoolean(value: unknown): boolean | undefined {
   return value === undefined ? undefined : Boolean(value);
@@ -428,6 +471,8 @@ function optionalBoolean(value: unknown): boolean | undefined {
  * 作用：
  * - 统一要求 actions 必须是非空数组。
  * - 复用 foot.ts 的 coerceFootAction，确保 API 和核心模块使用同一套动作结构。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function footActionsFromBody(body: JsonObject): ReturnType<typeof coerceFootAction>[] {
   if (!Array.isArray(body.actions) || body.actions.length === 0) {
@@ -446,6 +491,8 @@ function footActionsFromBody(body: JsonObject): ReturnType<typeof coerceFootActi
  * 作用：
  * - 把外部 JSON 收敛成 createFootPlan 可以消费的结构。
  * - API 层只负责轻量字段转换，风险推断仍由 foot.ts 完成。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function footPlanInputFromBody(body: JsonObject): CreateFootPlanInput {
   return {
@@ -465,6 +512,8 @@ function footPlanInputFromBody(body: JsonObject): CreateFootPlanInput {
  *
  * 作用：
  * - 让 foot API 支持三段式调用，也支持一次 execute 的简化调用。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function footPlanFromBody(body: JsonObject): FootPlan {
   const plan = optionalJsonObject(body.plan);
@@ -480,6 +529,8 @@ function footPlanFromBody(body: JsonObject): FootPlan {
  * 作用：
  * - 明确 approved=true 表示调用方已经完成审批。
  * - dryRun=true 会生成 skipped result，不启动真实进程。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function footExecutionOptionsFromBody(body: JsonObject): { approved?: boolean; dryRun?: boolean } {
   return {
@@ -497,6 +548,8 @@ function footExecutionOptionsFromBody(body: JsonObject): { approved?: boolean; d
  * 作用：
  * - 统一要求 actions 必须是非空数组。
  * - 复用 hand.ts 的 coerceHandAction，确保 API 和核心模块使用同一套动作结构。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function handActionsFromBody(body: JsonObject): ReturnType<typeof coerceHandAction>[] {
   if (!Array.isArray(body.actions) || body.actions.length === 0) {
@@ -515,6 +568,8 @@ function handActionsFromBody(body: JsonObject): ReturnType<typeof coerceHandActi
  * 作用：
  * - 把外部 JSON 收敛成 createHandPlan 可以消费的结构。
  * - API 层只负责轻量字段转换，风险推断仍由 hand.ts 完成。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function handPlanInputFromBody(body: JsonObject): CreateHandPlanInput {
   return {
@@ -534,6 +589,8 @@ function handPlanInputFromBody(body: JsonObject): CreateHandPlanInput {
  *
  * 作用：
  * - 让 hand API 支持三段式调用，也支持一次 execute 的简化调用。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function handPlanFromBody(body: JsonObject): HandPlan {
   const plan = optionalJsonObject(body.plan);
@@ -549,6 +606,8 @@ function handPlanFromBody(body: JsonObject): HandPlan {
  * 作用：
  * - 将外部 JSON 收敛成 applyHandPlan 需要的最小稳定结构。
  * - 避免缺失 planId、actionPreviews 或 diff 的 preview 进入写入链路。
+ *
+ * @param value 需要校验并转换为 HandPreviewFromBody 的未知输入值。
  */
 function coerceHandPreviewFromBody(value: JsonObject): HandPreview {
   if (!Array.isArray(value.actionPreviews)) {
@@ -618,6 +677,8 @@ function coerceHandPreviewFromBody(value: JsonObject): HandPreview {
  * 作用：
  * - 明确 approved=true 表示调用方已经完成审批。
  * - dryRun=true 会生成 skipped result，不写入文件。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function handApplyOptionsFromBody(body: JsonObject): ApplyHandPlanOptions {
   return {
@@ -635,6 +696,8 @@ function handApplyOptionsFromBody(body: JsonObject): ApplyHandPlanOptions {
  * 作用：
  * - 将外部 JSON 收敛成 createSpeakPlan 可以消费的结构。
  * - 保持受众、Channel、模式、语气和身份的校验都走 speak.ts。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 function speakPlanInputFromBody(body: JsonObject): CreateSpeakPlanInput {
   return {
@@ -664,6 +727,8 @@ function speakPlanInputFromBody(body: JsonObject): CreateSpeakPlanInput {
  * 作用：
  * - 允许调用方声明 markdown、json、draft_message 等内容形态。
  * - 自动过滤空数组；非法类型会抛错。
+ *
+ * @param value 需要尝试解析为 SpeakContentTypes 的未知可选值；无法识别时返回 undefined。
  */
 function optionalSpeakContentTypes(value: unknown): CreateSpeakPlanInput["contentTypes"] {
   if (value === undefined) return undefined;
@@ -679,6 +744,8 @@ function optionalSpeakContentTypes(value: unknown): CreateSpeakPlanInput["conten
  *
  * 作用：
  * - 保证详细程度只会是 brief、normal 或 detailed。
+ *
+ * @param value 需要尝试解析为 SpeakDetailLevel 的未知可选值；无法识别时返回 undefined。
  */
 function optionalSpeakDetailLevel(value: unknown): SpeakPlan["detailLevel"] | undefined {
   if (value === undefined) return undefined;
@@ -694,6 +761,8 @@ function optionalSpeakDetailLevel(value: unknown): SpeakPlan["detailLevel"] | un
  *
  * 作用：
  * - 保证表达语言只会是 zh-CN、en 或 mixed。
+ *
+ * @param value 需要尝试解析为 SpeakLanguage 的未知可选值；无法识别时返回 undefined。
  */
 function optionalSpeakLanguage(value: unknown): SpeakPlan["language"] | undefined {
   if (value === undefined) return undefined;
@@ -709,6 +778,8 @@ function optionalSpeakLanguage(value: unknown): SpeakPlan["language"] | undefine
  *
  * 作用：
  * - 保证输出格式只会是 text、markdown、json 或 yaml。
+ *
+ * @param value 需要尝试解析为 SpeakFormat 的未知可选值；无法识别时返回 undefined。
  */
 function optionalSpeakFormat(value: unknown): SpeakMessage["format"] | undefined {
   if (value === undefined) return undefined;
@@ -724,6 +795,8 @@ function optionalSpeakFormat(value: unknown): SpeakMessage["format"] | undefined
  *
  * 作用：
  * - 允许 API 调用方覆盖是否引用本地文件、网页来源和未验证警告。
+ *
+ * @param value 需要尝试解析为 SpeakSourcePolicy 的未知可选值；无法识别时返回 undefined。
  */
 function optionalSpeakSourcePolicy(value: unknown): Partial<SpeakSourcePolicy> | undefined {
   const policy = optionalJsonObject(value);
@@ -744,6 +817,8 @@ function optionalSpeakSourcePolicy(value: unknown): Partial<SpeakSourcePolicy> |
  *
  * 作用：
  * - 允许 API 调用方显式调整脱敏、草稿标签和外部承诺策略。
+ *
+ * @param value 需要尝试解析为 SpeakSafetyPolicy 的未知可选值；无法识别时返回 undefined。
  */
 function optionalSpeakSafetyPolicy(value: unknown): Partial<SpeakSafetyPolicy> | undefined {
   const policy = optionalJsonObject(value);
@@ -765,6 +840,8 @@ function optionalSpeakSafetyPolicy(value: unknown): Partial<SpeakSafetyPolicy> |
  *
  * 作用：
  * - 让表达内容可以带上工具结果、记忆、上下文块或推断来源。
+ *
+ * @param value 需要尝试解析为 SpeakSourceRefs 的未知可选值；无法识别时返回 undefined。
  */
 function optionalSpeakSourceRefs(value: unknown): SpeakSourceRef[] | undefined {
   if (value === undefined) return undefined;
@@ -787,6 +864,8 @@ function optionalSpeakSourceRefs(value: unknown): SpeakSourceRef[] | undefined {
  * 边界：
  * - 不自动调用手或脚。
  * - 不创建 assistant message；用户可见表达仍由正式 processUserMessage() 负责。
+ *
+ * @param body 已经解析为 JSON 对象的 HTTP 请求体。
  */
 async function decideAgentCoreFromBody(body: JsonObject): Promise<JsonObject> {
   const content = optionalString(body.content) || optionalString(body.rawText);
@@ -883,6 +962,9 @@ async function decideAgentCoreFromBody(body: JsonObject): Promise<JsonObject> {
  * 使用方法：非 `/api/` 请求由 handleRequest() 转交。
  * 作用：安全解析 public 目录内路径并返回静态文件及 MIME。
  * 边界：拒绝路径逃逸，不提供目录浏览或缓存版本管理。
+ *
+ * @param req 需要映射到 public 目录的非 API HTTP 请求。
+ * @param res 用于返回静态文件或错误状态的 HTTP 响应。
  */
 async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost");
@@ -921,6 +1003,9 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<v
  * 使用方法：handleRequest() 收到 `/api/` 请求后调用。
  * 作用：集中路由配置、会话、读听说、手脚、Agent Core、工具和审计 API。
  * 边界：只负责 HTTP 编排；业务安全规则仍由对应能力模块执行。
+ *
+ * @param req 已经确认路径以 `/api/` 开头的 HTTP 请求。
+ * @param res 用于写入 API 状态码和 JSON 响应的 HTTP 响应。
  */
 async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url || "/", "http://localhost");
@@ -1329,6 +1414,9 @@ async function routeApi(req: IncomingMessage, res: ServerResponse): Promise<void
  * 使用方法：Node HTTP server 对每个请求调用。
  * 作用：区分 API 与静态资源，并把异常转换成统一 JSON 错误。
  * 边界：这是最外层错误边界，不应吞掉已经需要写入审计的业务失败。
+ *
+ * @param req Node HTTP Server 交给应用的原始请求。
+ * @param res 用于返回 API JSON 或静态资源的原始响应。
  */
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {

@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
  * 使用方法：创建 Session、Message、Plan、Result 或 Audit 对象时传入短前缀。
  * 作用：使用 UUID 随机片段生成便于阅读和分类的本地唯一标识。
  * 边界：ID 适合本地关联，不承诺全局排序，也不包含业务语义。
+ *
+ * @param prefix 生成唯一 ID 时使用的业务类型前缀。
  */
 export function newId(prefix: string): string {
   return `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 18)}`;

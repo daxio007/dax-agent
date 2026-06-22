@@ -98,6 +98,8 @@ export interface ListenAnalysisOutput {
  * 作用：
  * - 把不同入口的输入统一成 ListenEvent。
  * - 在存储前对 rawText 做基础脱敏和长度限制。
+ *
+ * @param input 创建 ListenEvent 所需的结构化输入。
  */
 export function createListenEvent(input: CreateListenEventInput): ListenEvent {
   const kind = coerceListenEventKind(input.kind || "user_text");
@@ -128,6 +130,9 @@ export function createListenEvent(input: CreateListenEventInput): ListenEvent {
  * 作用：
  * - 将输入事件转成 intent、speechActs、constraints、corrections 和 contextNeeds。
  * - 这是 Agent Core 之前的第一层理解，不会执行任何动作。
+ *
+ * @param event 当前要分析、持久化或响应的事件对象。
+ * @param recentMessages 当前会话最近的消息，用于解析指代和建立短期上下文。
  */
 export function analyzeListenEvent(event: ListenEvent, recentMessages: Message[] = []): ListenResult {
   const text = normalizeText(event.rawText || payloadToText(event.payload));
@@ -188,6 +193,9 @@ export function analyzeListenEvent(event: ListenEvent, recentMessages: Message[]
  * 作用：
  * - 一次性完成 ListenEvent、ListenResult、审计记录和 ReadSource 建议。
  * - 保证正式入口都会留下可复盘的听力轨迹。
+ *
+ * @param input 当前方法所需的结构化输入，字段含义由对应输入类型定义。
+ * @param recentMessages 当前会话最近的消息，用于解析指代和建立短期上下文。
  */
 export async function analyzeAndRecordListenEvent(
   input: CreateListenEventInput,
@@ -213,6 +221,10 @@ export async function analyzeAndRecordListenEvent(
  * 作用：
  * - 为最常见的 WebChat 用户输入提供简洁入口。
  * - 默认 channelId 为 webchat，sourceLabel 为 WebChat。
+ *
+ * @param rawText 模型或用户提供、尚未解析和清洗的原始文本。
+ * @param options 控制当前方法可选行为、依赖或执行策略的配置对象。
+ * @param recentMessages 当前会话最近的消息，用于解析指代和建立短期上下文。
  */
 export async function analyzeAndRecordUserText(
   rawText: string,
@@ -241,6 +253,8 @@ export async function analyzeAndRecordUserText(
  * 作用：
  * - 把耳朵判断出的 ContextNeed 映射成眼睛可以执行的 ReadSource。
  * - 让“先听，再读”的流程有明确连接点。
+ *
+ * @param result 当前要格式化、返回、审计或持久化的能力结果。
  */
 export function suggestReadSourcesFromListenResult(result: ListenResult): ReadSource[] {
   const sources: ReadSource[] = [];
@@ -267,6 +281,8 @@ export function suggestReadSourcesFromListenResult(result: ListenResult): ReadSo
  *
  * 作用：
  * - 拒绝未定义的事件类型，避免输入层制造未知分支。
+ *
+ * @param kind 当前方法要解析、判断或创建的类别标识。
  */
 function coerceListenEventKind(kind: string): ListenEventKind {
   if (!listenEventKinds.has(kind as ListenEventKind)) {
@@ -283,6 +299,8 @@ function coerceListenEventKind(kind: string): ListenEventKind {
  *
  * 作用：
  * - 让审计记录能显示事件来自 WebChat、UI、MCP 还是系统。
+ *
+ * @param kind 当前方法要解析、判断或创建的类别标识。
  */
 function defaultSourceLabel(kind: ListenEventKind): string {
   const labels: Record<ListenEventKind, string> = {
@@ -307,6 +325,8 @@ function defaultSourceLabel(kind: ListenEventKind): string {
  *
  * 作用：
  * - 用户主动输入默认可信度较高，外部通知和背景事件默认较低。
+ *
+ * @param kind 当前方法要解析、判断或创建的类别标识。
  */
 function defaultTrust(kind: ListenEventKind): ListenTrust {
   if (kind === "user_text" || kind === "ui_control") return "high";
@@ -322,6 +342,8 @@ function defaultTrust(kind: ListenEventKind): ListenTrust {
  *
  * 作用：
  * - 让工具结果、MCP 通知和系统事件也能走同一套规则分析。
+ *
+ * @param payload 需要返回、分析或写入的结构化载荷。
  */
 function payloadToText(payload: JsonObject | undefined): string {
   if (!payload) return "";
@@ -337,6 +359,8 @@ function payloadToText(payload: JsonObject | undefined): string {
  * 作用：
  * - 避免把明显的 key、token、password 明文写进 listenEvents。
  * - 限制事件文本体积，长期保存只保留必要摘要。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function sanitizeListenText(text: string): string {
   const masked = text
@@ -358,6 +382,8 @@ function sanitizeListenText(text: string): string {
  *
  * 作用：
  * - 给后续记录、记忆沉淀和 UI 展示提供隐私提示。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function inferPrivacyLevel(text: string): ListenPrivacyLevel {
   if (!text.trim()) return "public";
@@ -376,6 +402,8 @@ function inferPrivacyLevel(text: string): ListenPrivacyLevel {
  * 作用：
  * - 合并空白字符并去掉首尾空格。
  * - 保留原始语言，不做翻译。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -389,6 +417,9 @@ function normalizeText(text: string): string {
  *
  * 作用：
  * - 过滤空输入、明显无内容的背景事件和低可信空事件。
+ *
+ * @param event 当前要分析、持久化或响应的事件对象。
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function isNoiseEvent(event: ListenEvent, text: string): boolean {
   if (!text.trim() && !event.payload) return true;
@@ -404,6 +435,9 @@ function isNoiseEvent(event: ListenEvent, text: string): boolean {
  *
  * 作用：
  * - 标记敏感文本、外部通道、背景事件、状态变化等风险。
+ *
+ * @param event 当前要分析、持久化或响应的事件对象。
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function detectListenRiskFlags(event: ListenEvent, text: string): string[] {
   const flags = new Set<string>();
@@ -428,6 +462,9 @@ function detectListenRiskFlags(event: ListenEvent, text: string): string[] {
  * 作用：
  * - 用第一阶段规则识别 pause、continue、implement、ask、design 等基础意图。
  * - 返回多个候选意图，后续再按优先级选 primaryIntent。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param event 当前要分析、持久化或响应的事件对象。
  */
 function classifyIntents(text: string, event: ListenEvent): ListenIntent[] {
   const intents = new Set<ListenIntent>();
@@ -466,6 +503,8 @@ function classifyIntents(text: string, event: ListenEvent): ListenIntent[] {
  *
  * 作用：
  * - 保证 stop、pause、correction 等控制信号排在普通聊天前面。
+ *
+ * @param intents 听能力识别出的候选意图列表。
  */
 function sortIntents(intents: ListenIntent[]): ListenIntent[] {
   return intents.sort((left, right) => intentPriority.indexOf(left) - intentPriority.indexOf(right));
@@ -479,6 +518,8 @@ function sortIntents(intents: ListenIntent[]): ListenIntent[] {
  *
  * 作用：
  * - 当一句话既包含问题又包含约束时，优先保留更能控制行为的意图。
+ *
+ * @param intents 听能力识别出的候选意图列表。
  */
 function choosePrimaryIntent(intents: ListenIntent[]): ListenIntent {
   return sortIntents(intents)[0] || "unknown";
@@ -492,6 +533,9 @@ function choosePrimaryIntent(intents: ListenIntent[]): ListenIntent {
  *
  * 作用：
  * - 区分问题、请求、指令、纠正、约束、偏好和闲聊。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param primaryIntent 听能力为本轮输入选出的主要意图。
  */
 function extractSpeechActs(text: string, primaryIntent: ListenIntent): SpeechAct[] {
   const acts = new Set<SpeechAct>();
@@ -517,6 +561,8 @@ function extractSpeechActs(text: string, primaryIntent: ListenIntent): SpeechAct
  *
  * 作用：
  * - 记录“只讨论某个范围”“不要用某技术”“每个方法写 doc”等边界。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function detectConstraints(text: string): ListenConstraint[] {
   const constraints: ListenConstraint[] = [];
@@ -573,6 +619,11 @@ function detectConstraints(text: string): ListenConstraint[] {
  *
  * 作用：
  * - 给约束保留 sourceText，后续审计能知道约束来自哪句话。
+ *
+ * @param constraints 本轮输入中识别出的约束集合。
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param pattern 用于识别、提取或匹配内容的规则表达式。
+ * @param constraint 当前要应用、比较或写入的单条用户约束。
  */
 function addConstraintIfMatch(
   constraints: ListenConstraint[],
@@ -592,6 +643,8 @@ function addConstraintIfMatch(
  *
  * 作用：
  * - 把“不是 X，是 Y”“我没有提到 X”等输入标记为对 Agent 的教学信号。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function detectCorrections(text: string): ListenCorrection[] {
   const corrections: ListenCorrection[] = [];
@@ -639,6 +692,10 @@ function detectCorrections(text: string): ListenCorrection[] {
  *
  * 作用：
  * - 把暂停、继续、停止、范围变化等控制信号显式输出给 Agent Core。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param primaryIntent 听能力为本轮输入选出的主要意图。
+ * @param constraints 本轮输入中识别出的约束集合。
  */
 function detectStateChanges(
   text: string,
@@ -672,6 +729,9 @@ function detectStateChanges(
  *
  * 作用：
  * - 把不完整指代标记出来，并尽可能解析到最近消息或当前项目上下文。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param recentMessages 当前会话最近的消息，用于解析指代和建立短期上下文。
  */
 function resolveReferences(text: string, recentMessages: Message[]): ListenReference[] {
   const references: ListenReference[] = [];
@@ -696,6 +756,13 @@ function resolveReferences(text: string, recentMessages: Message[]): ListenRefer
  *
  * 作用：
  * - 将指代词、解析目标、置信度和是否需要读取上下文放在一起。
+ *
+ * @param references 听能力识别出的上下文指代列表。
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param keyword 在 workspace 或文本内容中搜索的关键词。
+ * @param resolvedTo 指代最终解析到的消息、文件或上下文对象标识。
+ * @param confidence 当前判断的置信度数值，用于归一化或写入结果。
+ * @param needsRead 该引用是否还需要通过读能力补充真实上下文。
  */
 function addReferenceIfPresent(
   references: ListenReference[],
@@ -718,6 +785,10 @@ function addReferenceIfPresent(
  * 作用：
  * - 输出 memory、workspace、document、web_page 等 ContextNeed。
  * - Agent Core 可以据此生成 ReadPlan。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param primaryIntent 听能力为本轮输入选出的主要意图。
+ * @param references 听能力识别出的上下文指代列表。
  */
 function detectContextNeeds(
   text: string,
@@ -762,6 +833,12 @@ function detectContextNeeds(
  *
  * 作用：
  * - 避免在规则分支里重复写对象结构。
+ *
+ * @param needs 当前正在累计或判断的上下文需求集合。
+ * @param kind 当前方法要解析、判断或创建的类别标识。
+ * @param reason 拒绝、失败、风险判断或状态变化的原因说明。
+ * @param suggestedTarget 上下文需求建议读取的文件、网页或资源目标。
+ * @param required 该需求或条件是否必须满足。
  */
 function addContextNeed(
   needs: ListenContextNeed[],
@@ -781,6 +858,8 @@ function addContextNeed(
  *
  * 作用：
  * - 如果用户直接给了链接，就把它作为建议读取目标。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function extractFirstUrl(text: string): string | undefined {
   return text.match(/https?:\/\/[^\s)"']+/)?.[0];
@@ -794,6 +873,11 @@ function extractFirstUrl(text: string): string | undefined {
  *
  * 作用：
  * - 发现项目偏好、技术约束、纠正和决策，但不直接写入长期记忆。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param constraints 本轮输入中识别出的约束集合。
+ * @param corrections 用户对事实、术语或既有理解给出的纠正列表。
+ * @param primaryIntent 听能力为本轮输入选出的主要意图。
  */
 function detectMemoryCandidates(
   text: string,
@@ -847,6 +931,12 @@ function detectMemoryCandidates(
  *
  * 作用：
  * - 将意图、上下文需求和状态变化压缩成 Agent Core 可以调度的 nextStep。
+ *
+ * @param primaryIntent 听能力为本轮输入选出的主要意图。
+ * @param contextNeeds 听能力识别出的上下文需求列表。
+ * @param corrections 用户对事实、术语或既有理解给出的纠正列表。
+ * @param stateChanges 听能力识别出的暂停、继续、停止等状态变化。
+ * @param memoryCandidates 本轮输入产生、尚待记忆策略判断的候选内容。
  */
 function chooseNextStep(
   primaryIntent: ListenIntent,
@@ -875,6 +965,13 @@ function chooseNextStep(
  *
  * 作用：
  * - 让 Agent Core 知道是否应该直接继续，还是需要澄清。
+ *
+ * @param event 当前要分析、持久化或响应的事件对象。
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param references 听能力识别出的上下文指代列表。
+ * @param corrections 用户对事实、术语或既有理解给出的纠正列表。
+ * @param constraints 本轮输入中识别出的约束集合。
+ * @param riskFlags 风险检测阶段生成、用于推导最终风险等级的标记集合。
  */
 function calculateConfidence(
   event: ListenEvent,
@@ -903,6 +1000,9 @@ function calculateConfidence(
  *
  * 作用：
  * - 给 UI 和 Agent Core 一个简短目标标签。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
+ * @param references 听能力识别出的上下文指代列表。
  */
 function inferTarget(text: string, references: ListenReference[]): string | undefined {
   const quoted = text.match(/[“"']([^”"']{2,80})[”"']/)?.[1];
@@ -923,6 +1023,9 @@ function inferTarget(text: string, references: ListenReference[]): string | unde
  *
  * 作用：
  * - 统一补齐 id、eventId、createdAt 和默认数组字段。
+ *
+ * @param event 当前要分析、持久化或响应的事件对象。
+ * @param partial 用于补齐默认字段并创建完整结构的部分对象。
  */
 function createListenResult(
   event: ListenEvent,
@@ -944,6 +1047,8 @@ function createListenResult(
  *
  * 作用：
  * - 明确哪些听力上下文需求能交给眼睛执行。
+ *
+ * @param kind 当前方法要解析、判断或创建的类别标识。
  */
 function readKindForContextNeed(kind: ListenContextNeed["kind"]): ReadSourceKind | null {
   const map: Partial<Record<ListenContextNeed["kind"], ReadSourceKind>> = {
@@ -966,6 +1071,8 @@ function readKindForContextNeed(kind: ListenContextNeed["kind"]): ReadSourceKind
  *
  * 作用：
  * - 让 ReadSource 始终有可执行的 target。
+ *
+ * @param kind 当前方法要解析、判断或创建的类别标识。
  */
 function defaultReadTargetForNeed(kind: ListenContextNeed["kind"]): string {
   const targets: Record<ListenContextNeed["kind"], string> = {
@@ -989,6 +1096,8 @@ function defaultReadTargetForNeed(kind: ListenContextNeed["kind"]): string {
  *
  * 作用：
  * - 保留用户原话的关键片段，但避免把长文本原样塞入结构化结果。
+ *
+ * @param text 当前要清洗、解析、检测、摘要或输出的文本。
  */
 function truncateForSource(text: string): string {
   const clean = text.trim();
@@ -1003,6 +1112,9 @@ function truncateForSource(text: string): string {
  *
  * 作用：
  * - 保持 ListenResult 简洁，避免同一信号重复出现。
+ *
+ * @param items 需要查找、去重、更新或转换的项目集合。
+ * @param keyFor 把列表项转换为稳定去重键的回调函数。
  */
 function dedupeBy<T>(items: T[], keyFor: (item: T) => string): T[] {
   const seen = new Set<string>();

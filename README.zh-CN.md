@@ -99,7 +99,7 @@ Web 控制台现在支持中文和英文界面：
 
 ## 开发检查
 
-所有 TypeScript 命名方法都必须有 JSDoc，并明确说明“使用方法”和“作用”。详细规则见 `docs/jsdoc-standard.md`。
+所有 TypeScript 命名方法都必须有 JSDoc，明确说明“使用方法”和“作用”，并用 `@param` 逐项解释每个参数。详细规则见 `docs/jsdoc-standard.md`。
 
 提交源码改动前运行：
 
