@@ -24,6 +24,12 @@ interface WebSearchResponse {
 const clients = new Map<McpServerId, Promise<ManagedClient>>();
 let browserQueue: Promise<void> = Promise.resolve();
 
+/**
+ * 使用方法：在 serverCommand 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param serverId 当前方法使用的 serverId 参数。
+ */
+
 function serverCommand(serverId: McpServerId): { command: string; args: string[] } {
   if (serverId === "web-search") {
     return {
@@ -45,6 +51,12 @@ function serverCommand(serverId: McpServerId): { command: string; args: string[]
   };
 }
 
+/**
+ * 使用方法：在 connectClient 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param serverId 当前方法使用的 serverId 参数。
+ */
+
 async function connectClient(serverId: McpServerId): Promise<ManagedClient> {
   const command = serverCommand(serverId);
   const transport = new StdioClientTransport({
@@ -60,6 +72,12 @@ async function connectClient(serverId: McpServerId): Promise<ManagedClient> {
   return { client, transport };
 }
 
+/**
+ * 使用方法：在 getClient 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param serverId 当前方法使用的 serverId 参数。
+ */
+
 async function getClient(serverId: McpServerId): Promise<Client> {
   let pending = clients.get(serverId);
   if (!pending) {
@@ -74,6 +92,12 @@ async function getClient(serverId: McpServerId): Promise<Client> {
   }
 }
 
+/**
+ * 使用方法：在 toolText 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param result 当前方法使用的 result 参数。
+ */
+
 function toolText(result: Awaited<ReturnType<Client["callTool"]>>): string {
   const content = "content" in result && Array.isArray(result.content)
     ? result.content
@@ -84,6 +108,14 @@ function toolText(result: Awaited<ReturnType<Client["callTool"]>>): string {
     .join("\n")
     .trim();
 }
+
+/**
+ * 使用方法：在 callTool 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param serverId 当前方法使用的 serverId 参数。
+ * @param name 当前方法使用的 name 参数。
+ * @param args 当前方法使用的 args 参数。
+ */
 
 async function callTool(serverId: McpServerId, name: string, args: JsonObject): Promise<string> {
   const client = await getClient(serverId);
@@ -96,6 +128,13 @@ async function callTool(serverId: McpServerId, name: string, args: JsonObject): 
   }
   return toolText(result);
 }
+
+/**
+ * 使用方法：在 searchWebWithMcp 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param query 当前方法使用的 query 参数。
+ * @param maxResults 当前方法使用的 maxResults 参数。
+ */
 
 export async function searchWebWithMcp(query: string, maxResults = 5): Promise<WebSearchResponse> {
   const text = await callTool("web-search", "web_search", {
@@ -118,8 +157,21 @@ export async function searchWebWithMcp(query: string, maxResults = 5): Promise<W
   };
 }
 
+/**
+ * 使用方法：在 readWebPageWithMcp 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param url 当前方法使用的 url 参数。
+ * @param maxChars 当前方法使用的 maxChars 参数。
+ */
+
 export async function readWebPageWithMcp(url: string, maxChars = 30000): Promise<string> {
-  let resolveQueue: () => void = () => {};
+  /**
+   * 使用方法：作为 readWebPageWithMcp 队列释放回调的默认占位函数。
+   * 作用：保证 finally 阶段始终可以安全调用队列释放逻辑。
+   */
+  function noopResolveQueue(): void {}
+
+  let resolveQueue: () => void = noopResolveQueue;
   const previous = browserQueue;
   browserQueue = new Promise<void>((resolve) => {
     resolveQueue = resolve;
@@ -135,6 +187,11 @@ export async function readWebPageWithMcp(url: string, maxChars = 30000): Promise
     resolveQueue();
   }
 }
+
+/**
+ * 使用方法：在 closeMcpClients 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
 
 export async function closeMcpClients(): Promise<void> {
   const active = [...clients.values()];

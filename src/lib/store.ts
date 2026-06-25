@@ -203,16 +203,28 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
     const before = store.sessions.length;
     const sessionMessages = store.messages.filter((message) => message.sessionId === sessionId);
     const sessionAudit = store.audit.filter((record) => record.sessionId === sessionId);
-    const stringMetaIds = (key: string): string[] =>
-      sessionMessages
+    /**
+     * 使用方法：在 stringMetaIds 的调用点传入所需参数并调用。
+     * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+     * @param key 当前方法使用的 key 参数。
+     */
+    function stringMetaIds(key: string): string[] {
+      return sessionMessages
         .map((message) => message.meta?.[key])
         .filter((value): value is string => typeof value === "string" && Boolean(value));
-    const auditIds = (key: keyof AuditRecord): Set<string> =>
-      new Set(
+    }
+    /**
+     * 使用方法：在 auditIds 的调用点传入所需参数并调用。
+     * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+     * @param key 当前方法使用的 key 参数。
+     */
+    function auditIds(key: keyof AuditRecord): Set<string> {
+      return new Set(
         sessionAudit
           .map((record) => record[key])
           .filter((value): value is string => typeof value === "string" && Boolean(value))
       );
+    }
     const listenEventIds = auditIds("listenEventId");
     const listenResultIds = auditIds("listenResultId");
     const speakPlanIds = auditIds("speakPlanId");
@@ -300,6 +312,12 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
   });
 }
 
+/**
+ * 使用方法：在 recordMemoryDecision 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param memory 当前方法使用的 memory 参数。
+ */
+
 export async function recordMemoryDecision(memory: MemoryDecision): Promise<MemoryDecision> {
   if (!memory.shouldStore) return memory;
   return mutate((store) => {
@@ -315,6 +333,12 @@ export async function recordMemoryDecision(memory: MemoryDecision): Promise<Memo
     return memory;
   });
 }
+
+/**
+ * 使用方法：在 listMemories 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param sessionId 当前方法使用的 sessionId 参数。
+ */
 
 export async function listMemories(sessionId: string | null = null): Promise<MemoryDecision[]> {
   const store = await readStore();

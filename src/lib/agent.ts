@@ -107,15 +107,35 @@ interface ToolRunUserReport {
   riskFlags: string[];
 }
 
+/**
+ * 使用方法：在 toolRunOutputText 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param run 当前方法使用的 run 参数。
+ */
+
 function toolRunOutputText(run: ToolRun | null): string {
   if (!run) return "";
   return String(run.output || run.error || "").trim();
 }
 
+/**
+ * 使用方法：在 truncateToolOutput 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ * @param maxChars 当前方法使用的 maxChars 参数。
+ */
+
 function truncateToolOutput(text: string, maxChars = 8000): string {
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n\n[output truncated: ${text.length - maxChars} chars omitted]`;
 }
+
+/**
+ * 使用方法：在 hasUsefulPartialOutput 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param run 当前方法使用的 run 参数。
+ * @param text 当前方法使用的 text 参数。
+ */
 
 function hasUsefulPartialOutput(run: ToolRun | null, text: string): boolean {
   if (!run || run.status === "completed") return false;
@@ -125,10 +145,23 @@ function hasUsefulPartialOutput(run: ToolRun | null, text: string): boolean {
     lines.some((line) => /^[-\s]{4,}$/.test(line));
 }
 
+/**
+ * 使用方法：在 spokenStatusForToolRun 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param run 当前方法使用的 run 参数。
+ */
+
 function spokenStatusForToolRun(run: ToolRun | null): "executed" | "partial" | "failed" {
   if (run?.status === "completed") return "executed";
   return hasUsefulPartialOutput(run, toolRunOutputText(run)) ? "partial" : "failed";
 }
+
+/**
+ * 使用方法：在 formatToolRunForUser 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param run 当前方法使用的 run 参数。
+ * @param locale 当前方法使用的 locale 参数。
+ */
 
 export function formatToolRunForUser(run: ToolRun | null, locale: Locale = "zh-CN"): ToolRunUserReport {
   const zh = isZh(locale);
@@ -299,6 +332,12 @@ function parseSlashCommand(content: string): SlashCommand | null {
   }
 }
 
+/**
+ * 使用方法：在 actionProposalReplyIntent 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param content 当前方法使用的 content 参数。
+ */
+
 function actionProposalReplyIntent(content: string): "approve" | "reject" | null {
   const text = content.trim().toLowerCase();
   if (/^(需要|可以|执行|确认|同意|批准|好|好的|开始|yes|y|ok|approve|run|execute)$/i.test(text)) {
@@ -310,6 +349,12 @@ function actionProposalReplyIntent(content: string): "approve" | "reject" | null
   return null;
 }
 
+/**
+ * 使用方法：在 storedActionProposal 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param value 当前方法使用的 value 参数。
+ */
+
 function storedActionProposal(value: unknown): ActionProposal | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const proposal = value as Partial<ActionProposal>;
@@ -320,6 +365,12 @@ function storedActionProposal(value: unknown): ActionProposal | null {
     : null;
 }
 
+/**
+ * 使用方法：在 latestActionProposal 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param messages 当前方法使用的 messages 参数。
+ */
+
 function latestActionProposal(messages: Message[]): { proposal: ActionProposal; message: Message } | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -329,6 +380,12 @@ function latestActionProposal(messages: Message[]): { proposal: ActionProposal; 
   }
   return null;
 }
+
+/**
+ * 使用方法：在 commandFromActionProposal 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param proposal 当前方法使用的 proposal 参数。
+ */
 
 function commandFromActionProposal(proposal: ActionProposal): {
   command: string;
@@ -344,6 +401,15 @@ function commandFromActionProposal(proposal: ActionProposal): {
     timeoutMs: action.timeoutMs
   };
 }
+
+/**
+ * 使用方法：在 addToolRunReportMessage 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param sessionId 当前方法使用的 sessionId 参数。
+ * @param run 当前方法使用的 run 参数。
+ * @param locale 当前方法使用的 locale 参数。
+ * @param options 当前方法使用的 options 参数。
+ */
 
 export async function addToolRunReportMessage(
   sessionId: string,
@@ -518,6 +584,16 @@ async function handleSlash(
  * @param content 用户在当前会话中发送的原始消息正文。
  * @param locale 本轮消息使用的界面语言，默认使用中文。
  */
+/**
+ * 使用方法：在 handleActionProposalReply 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param sessionId 当前方法使用的 sessionId 参数。
+ * @param userMessage 当前方法使用的 userMessage 参数。
+ * @param content 当前方法使用的 content 参数。
+ * @param locale 当前方法使用的 locale 参数。
+ * @param recentMessages 当前方法使用的 recentMessages 参数。
+ */
+
 async function handleActionProposalReply(
   sessionId: string,
   userMessage: Message,
@@ -596,6 +672,14 @@ async function handleActionProposalReply(
   });
   return { ...spoken, toolRuns: [completed || run] };
 }
+
+/**
+ * 使用方法：在 processUserMessage 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param sessionId 当前方法使用的 sessionId 参数。
+ * @param content 当前方法使用的 content 参数。
+ * @param locale 当前方法使用的 locale 参数。
+ */
 
 export async function processUserMessage(
   sessionId: string,

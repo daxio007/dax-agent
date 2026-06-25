@@ -554,6 +554,12 @@ function extractSpeechActs(text: string, primaryIntent: ListenIntent): SpeechAct
   return [...acts];
 }
 
+/**
+ * 使用方法：在 isExplicitApproval 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
+
 function isExplicitApproval(text: string): boolean {
   const normalized = text.trim().toLowerCase();
   return /^(批准|同意|可以|确认|好的?|行|开始|执行|yes|y|ok|approve|approved|run|execute)[了吧啊呀！!。.]*$/i.test(
@@ -850,22 +856,45 @@ function detectContextNeeds(
   return dedupeBy(needs, (need) => `${need.kind}:${need.suggestedTarget || ""}`);
 }
 
+/**
+ * 使用方法：在 isWebSearchCapabilityQuestion 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
+
 function isWebSearchCapabilityQuestion(text: string): boolean {
   return /(?:有没有|没有|具备|支持|能不能|可以|是否有).{0,12}(?:直接)?(?:联网|上网|网络)?搜索.{0,12}(?:能力|功能)?|只能.{0,12}(?:发|给).{0,8}(?:链接|网址)|搜索.{0,8}(?:能力|功能)/i.test(
     text
   );
 }
 
+/**
+ * 使用方法：在 isWebResearchRequest 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
+
 function isWebResearchRequest(text: string): boolean {
   return /网上|联网|上网|搜索|搜一下|查找|调研|所有文章|网页|网站|web|online|search/i.test(text) ||
     /(?:看看|查阅|阅读|研究|了解)\s*[^，。！？?]{1,120}?(?:相关)?(?:文档|资料|文章|内容)/i.test(text);
 }
+
+/**
+ * 使用方法：在 isCurrentHolidayQuestion 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
 
 function isCurrentHolidayQuestion(text: string): boolean {
   return /(?:今天|今日|当天|现在).{0,8}(?:是什么|有(?:什么|哪些)?|过什么)?(?:节日|纪念日|日子)|(?:今天|今日).{0,4}什么日子/i.test(
     text
   );
 }
+
+/**
+ * 使用方法：在 currentHolidaySearchQuery 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
 
 function currentHolidaySearchQuery(): string {
   const context = getRuntimeTimeContext("zh-CN");
@@ -1137,6 +1166,12 @@ function defaultReadTargetForNeed(kind: ListenContextNeed["kind"]): string {
   return targets[kind];
 }
 
+/**
+ * 使用方法：在 extractWebSearchQuery 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
+
 function extractWebSearchQuery(text: string): string {
   const relatedDocs = text.match(
     /(?:看看|查阅|阅读|研究|了解)\s*([^，。！？?]{2,120}?)(?:的)?相关(?:文档|资料|文章|内容)/i
@@ -1151,6 +1186,12 @@ function extractWebSearchQuery(text: string): string {
   if (request) return cleanWebSearchQuery(request);
   return cleanWebSearchQuery(text.replace(/https?:\/\/\S+/gi, "")).slice(0, 180);
 }
+
+/**
+ * 使用方法：在 cleanWebSearchQuery 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
 
 function cleanWebSearchQuery(text: string): string {
   return text

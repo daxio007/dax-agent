@@ -458,6 +458,12 @@ function displayStatus(status: ToolStatus): string {
   return t(map[status]);
 }
 
+/**
+ * 使用方法：在 proposalCommand 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param proposal 当前方法使用的 proposal 参数。
+ */
+
 function proposalCommand(proposal: ActionProposal): { command: string; cwd: string; timeoutMs?: number } | null {
   const action = proposal.suggestedFootPlan?.actions?.[0];
   if (!action?.command) return null;
@@ -468,17 +474,42 @@ function proposalCommand(proposal: ActionProposal): { command: string; cwd: stri
   };
 }
 
+/**
+ * 使用方法：在 proposalDismissKey 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param proposalId 当前方法使用的 proposalId 参数。
+ */
+
 function proposalDismissKey(proposalId: string): string {
   return `dax.actionProposal.${proposalId}.dismissed`;
 }
+
+/**
+ * 使用方法：在 proposalWasHandled 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param session 当前方法使用的 session 参数。
+ * @param proposalId 当前方法使用的 proposalId 参数。
+ */
 
 function proposalWasHandled(session: SessionDetail, proposalId: string): boolean {
   return session.toolRuns.some((run) => run.input?.actionProposalId === proposalId);
 }
 
+/**
+ * 使用方法：在 rememberProposalChoice 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param proposalId 当前方法使用的 proposalId 参数。
+ */
+
 function rememberProposalChoice(proposalId: string): void {
   sessionStorage.setItem(proposalDismissKey(proposalId), "1");
 }
+
+/**
+ * 使用方法：在 proposalChoiceRemembered 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param proposalId 当前方法使用的 proposalId 参数。
+ */
 
 function proposalChoiceRemembered(proposalId: string): boolean {
   return sessionStorage.getItem(proposalDismissKey(proposalId)) === "1";
@@ -540,13 +571,30 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", "&#039;");
 }
 
+/**
+ * 使用方法：在 fencedBlock 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param value 当前方法使用的 value 参数。
+ */
+
 function fencedBlock(value: unknown): string {
   return `~~~text\n${String(value || "").replaceAll("~~~", "~~\\~")}\n~~~`;
 }
 
+/**
+ * 使用方法：在 safeFileSegment 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param value 当前方法使用的 value 参数。
+ */
+
 function safeFileSegment(value: string): string {
   return value.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-").slice(0, 80) || "session";
 }
+
+/**
+ * 使用方法：在 exportConversation 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
 
 function exportConversation(): void {
   const session = state.activeSession;
@@ -711,11 +759,23 @@ function renderTools(toolRuns: ToolRun[]): void {
   }
 }
 
+/**
+ * 使用方法：在 findProposal 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param proposalId 当前方法使用的 proposalId 参数。
+ */
+
 function findProposal(proposalId: string): { proposal: ActionProposal; messageId: string } | null {
   const message = state.activeSession?.messages.find((item) => item.meta?.actionProposal?.id === proposalId);
   const proposal = message?.meta?.actionProposal;
   return proposal && message ? { proposal, messageId: message.id } : null;
 }
+
+/**
+ * 使用方法：在 latestUnhandledProposal 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param session 当前方法使用的 session 参数。
+ */
 
 function latestUnhandledProposal(session: SessionDetail): { proposal: ActionProposal; messageId: string } | null {
   for (let index = session.messages.length - 1; index >= 0; index -= 1) {
@@ -734,6 +794,13 @@ function latestUnhandledProposal(session: SessionDetail): { proposal: ActionProp
   return null;
 }
 
+/**
+ * 使用方法：在 showActionDialog 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param proposal 当前方法使用的 proposal 参数。
+ * @param messageId 当前方法使用的 messageId 参数。
+ */
+
 function showActionDialog(proposal: ActionProposal, messageId: string): void {
   state.actionDialogProposal = { proposal, messageId };
   const command = proposalCommand(proposal);
@@ -750,10 +817,20 @@ function showActionDialog(proposal: ActionProposal, messageId: string): void {
   }
 }
 
+/**
+ * 使用方法：在 closeActionDialog 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
+
 function closeActionDialog(): void {
   elements.actionDialog.close();
   state.actionDialogProposal = null;
 }
+
+/**
+ * 使用方法：在 executeActiveProposal 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
 
 async function executeActiveProposal(): Promise<void> {
   const active = state.actionDialogProposal;
@@ -790,11 +867,21 @@ async function executeActiveProposal(): Promise<void> {
   }
 }
 
+/**
+ * 使用方法：在 rejectActiveProposal 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
+
 function rejectActiveProposal(): void {
   const active = state.actionDialogProposal;
   if (active) rememberProposalChoice(active.proposal.id);
   closeActionDialog();
 }
+
+/**
+ * 使用方法：在 customInputForActiveProposal 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
 
 function customInputForActiveProposal(): void {
   const active = state.actionDialogProposal;
@@ -802,6 +889,12 @@ function customInputForActiveProposal(): void {
   closeActionDialog();
   elements.messageInput.focus();
 }
+
+/**
+ * 使用方法：在 showDeleteSessionDialog 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param session 当前方法使用的 session 参数。
+ */
 
 function showDeleteSessionDialog(session: SessionSummary): void {
   state.deleteDialogSession = { id: session.id, title: displayTitle(session.title) };
@@ -815,16 +908,32 @@ function showDeleteSessionDialog(session: SessionSummary): void {
   if (!elements.deleteSessionDialog.open) elements.deleteSessionDialog.showModal();
 }
 
+/**
+ * 使用方法：在 closeDeleteSessionDialog 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
+
 function closeDeleteSessionDialog(): void {
   if (elements.deleteSessionDialog.open) elements.deleteSessionDialog.close();
   state.deleteDialogSession = null;
 }
+
+/**
+ * 使用方法：在 setSessionControlsAvailable 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param available 当前方法使用的 available 参数。
+ */
 
 function setSessionControlsAvailable(available: boolean): void {
   elements.messageInput.disabled = !available;
   elements.sendButton.disabled = !available || state.sending;
   elements.exportButton.disabled = !available;
 }
+
+/**
+ * 使用方法：在 clearActiveSession 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
 
 function clearActiveSession(): void {
   state.activeSessionId = null;
@@ -835,6 +944,11 @@ function clearActiveSession(): void {
   setSessionControlsAvailable(false);
   renderSessions();
 }
+
+/**
+ * 使用方法：在 confirmDeleteSession 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
 
 async function confirmDeleteSession(): Promise<void> {
   const target = state.deleteDialogSession;
@@ -1075,6 +1189,12 @@ async function createNewSession(): Promise<void> {
   elements.messageInput.focus();
 }
 
+/**
+ * 使用方法：在 renderSendingState 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param content 当前方法使用的 content 参数。
+ */
+
 function renderSendingState(content: string): void {
   const currentMessages = state.activeSession?.messages || [];
   renderMessages([
@@ -1208,6 +1328,12 @@ async function handleToolClick(event: MouseEvent): Promise<void> {
     alert(error instanceof Error ? error.message : String(error));
   }
 }
+
+/**
+ * 使用方法：在 handleMessageClick 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param event 当前方法使用的 event 参数。
+ */
 
 function handleMessageClick(event: MouseEvent): void {
   const target = event.target instanceof Element ? event.target : null;

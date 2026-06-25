@@ -328,15 +328,33 @@ export function applyHardControl(
   return null;
 }
 
+/**
+ * 使用方法：在 isWebSearchCapabilityQuestion 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
+
 function isWebSearchCapabilityQuestion(text: string): boolean {
   return /(?:有没有|没有|具备|支持|能不能|可以|是否有).{0,12}(?:直接)?(?:联网|上网|网络)?搜索.{0,12}(?:能力|功能)?|只能.{0,12}(?:发|给).{0,8}(?:链接|网址)|搜索.{0,8}(?:能力|功能)/i.test(
     text
   );
 }
 
+/**
+ * 使用方法：在 isCurrentDateQuestion 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
+
 function isCurrentDateQuestion(text: string): boolean {
   return /今天|今日|现在|当前日期|几月几日|星期几|周几|what(?:'s| is) (?:the )?date|what day is it/i.test(text);
 }
+
+/**
+ * 使用方法：在 isCurrentHolidayQuestion 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
 
 function isCurrentHolidayQuestion(text: string): boolean {
   return /(?:今天|今日|当天|现在).{0,8}(?:是什么|有(?:什么|哪些)?|过什么)?(?:节日|纪念日|日子)|(?:今天|今日).{0,4}什么日子/i.test(
@@ -1042,6 +1060,14 @@ export function createActionProposalFromDecision(
  * @param input 汇总听、读、会话、配置和待处理工具状态的 Agent Core 输入。
  * @param options 可选依赖注入和推理配置，主要供测试或替换模型调用。
  */
+/**
+ * 使用方法：在 createSuggestedFootAction 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param input 当前方法使用的 input 参数。
+ * @param candidate 当前方法使用的 candidate 参数。
+ * @param command 当前方法使用的 command 参数。
+ */
+
 function createSuggestedFootAction(
   input: AgentCoreInput,
   candidate: AgentDecisionCandidate,
@@ -1067,6 +1093,12 @@ function createSuggestedFootAction(
   };
 }
 
+/**
+ * 使用方法：在 inferFootCommand 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param input 当前方法使用的 input 参数。
+ */
+
 function inferFootCommand(input: AgentCoreInput): string | undefined {
   const asksForCDrive =
     /(c\s*盘|c:\\|c drive|system drive)/i.test(input.userText) &&
@@ -1085,9 +1117,21 @@ function inferFootCommand(input: AgentCoreInput): string | undefined {
   return powerShellEncodedCommand(script);
 }
 
+/**
+ * 使用方法：在 inferFootCommandTimeout 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param command 当前方法使用的 command 参数。
+ */
+
 function inferFootCommandTimeout(command: string): number {
   return /Get-ChildItem[\s\S]*-Recurse|Measure-Object/i.test(command) ? 120000 : 30000;
 }
+
+/**
+ * 使用方法：在 normalizeFootCommand 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param command 当前方法使用的 command 参数。
+ */
 
 function normalizeFootCommand(command: string): string {
   const trimmed = command.trim();
@@ -1098,10 +1142,23 @@ function normalizeFootCommand(command: string): string {
   return trimmed;
 }
 
+/**
+ * 使用方法：在 powerShellEncodedCommand 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param script 当前方法使用的 script 参数。
+ */
+
 function powerShellEncodedCommand(script: string): string {
   const wrapped = `$ProgressPreference = 'SilentlyContinue'; ${script}`;
   return `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(wrapped, "utf16le").toString("base64")}`;
 }
+
+/**
+ * 使用方法：在 decideNextStep 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param input 当前方法使用的 input 参数。
+ * @param options 当前方法使用的 options 参数。
+ */
 
 export async function decideNextStep(
   input: AgentCoreInput,
@@ -1506,6 +1563,12 @@ function extractFirstJsonObject(text: string): string {
   }
   return text.slice(start, end + 1);
 }
+
+/**
+ * 使用方法：在 extractDecisionJson 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param text 当前方法使用的 text 参数。
+ */
 
 function extractDecisionJson(text: string): string {
   const trimmed = text.trim();

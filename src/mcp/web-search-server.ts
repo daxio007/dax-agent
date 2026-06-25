@@ -12,6 +12,12 @@ interface WebSearchResult {
   description: string;
 }
 
+/**
+ * 使用方法：在 decodeXml 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param value 当前方法使用的 value 参数。
+ */
+
 function decodeXml(value: string): string {
   return value
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
@@ -23,10 +29,24 @@ function decodeXml(value: string): string {
     .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)));
 }
 
+/**
+ * 使用方法：在 xmlTag 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param block 当前方法使用的 block 参数。
+ * @param tag 当前方法使用的 tag 参数。
+ */
+
 function xmlTag(block: string, tag: string): string {
   const match = block.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i"));
   return decodeXml(match?.[1]?.trim() || "");
 }
+
+/**
+ * 使用方法：在 parseBingRss 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param xml 当前方法使用的 xml 参数。
+ * @param limit 当前方法使用的 limit 参数。
+ */
 
 function parseBingRss(xml: string, limit: number): WebSearchResult[] {
   const results: WebSearchResult[] = [];
@@ -41,6 +61,13 @@ function parseBingRss(xml: string, limit: number): WebSearchResult[] {
   }
   return results;
 }
+
+/**
+ * 使用方法：在 searchWeb 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param query 当前方法使用的 query 参数。
+ * @param maxResults 当前方法使用的 maxResults 参数。
+ */
 
 async function searchWeb(query: string, maxResults: number): Promise<WebSearchResult[]> {
   const normalizedQuery = query.replace(/\s+/g, " ").trim();
@@ -71,6 +98,13 @@ async function searchWeb(query: string, maxResults: number): Promise<WebSearchRe
     .slice(0, maxResults)
     .map((entry) => entry.result);
 }
+
+/**
+ * 使用方法：在 searchBingRss 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param query 当前方法使用的 query 参数。
+ * @param maxResults 当前方法使用的 maxResults 参数。
+ */
 
 async function searchBingRss(query: string, maxResults: number): Promise<WebSearchResult[]> {
   const controller = new AbortController();

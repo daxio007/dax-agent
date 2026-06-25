@@ -62,6 +62,13 @@ function stringInput(input: JsonObject, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * 使用方法：在 positiveNumberInput 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param input 当前方法使用的 input 参数。
+ * @param key 当前方法使用的 key 参数。
+ */
+
 function positiveNumberInput(input: JsonObject, key: string): number | undefined {
   const value = input[key];
   const numberValue = typeof value === "number" ? value : Number(value);

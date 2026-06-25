@@ -428,6 +428,16 @@ export async function readWebPage(
   }
 }
 
+/**
+ * 使用方法：在 searchAndReadWeb 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param source 当前方法使用的 source 参数。
+ * @param allowNetwork 当前方法使用的 allowNetwork 参数。
+ * @param planId 当前方法使用的 planId 参数。
+ * @param maxBytes 当前方法使用的 maxBytes 参数。
+ * @param maxResults 当前方法使用的 maxResults 参数。
+ */
+
 export async function searchAndReadWeb(
   source: ReadSource,
   allowNetwork: boolean,

@@ -13,9 +13,23 @@ export interface CalendarObservance {
   reasonEn: string;
 }
 
+/**
+ * 使用方法：在 part 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param parts 当前方法使用的 parts 参数。
+ * @param type 当前方法使用的 type 参数。
+ */
+
 function part(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
   return parts.find((item) => item.type === type)?.value || "";
 }
+
+/**
+ * 使用方法：在 getRuntimeTimeContext 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param locale 当前方法使用的 locale 参数。
+ * @param now 当前方法使用的 now 参数。
+ */
 
 export function getRuntimeTimeContext(
   locale = "zh-CN",
@@ -50,10 +64,22 @@ export function getRuntimeTimeContext(
   };
 }
 
+/**
+ * 使用方法：在 localDateSearchLabel 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param context 当前方法使用的 context 参数。
+ */
+
 export function localDateSearchLabel(context: RuntimeTimeContext): string {
   const [year, month, day] = context.localDate.split("-");
   return `${year}年${Number(month)}月${Number(day)}日`;
 }
+
+/**
+ * 使用方法：在 calendarObservances 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ * @param context 当前方法使用的 context 参数。
+ */
 
 export function calendarObservances(context: RuntimeTimeContext): CalendarObservance[] {
   const [yearText, monthText, dayText] = context.localDate.split("-");

@@ -690,6 +690,11 @@ function didCommandTimeOut(error: ExecError | null): boolean {
   return Boolean(error.killed && /timed out|timeout/i.test(error.message || ""));
 }
 
+/**
+ * 使用方法：在 commandEnvironment 的调用点传入所需参数并调用。
+ * 作用：支撑当前模块的业务流程并保持调用入口可审计。
+ */
+
 function commandEnvironment(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   const fallbackPath = [
