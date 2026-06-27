@@ -9,6 +9,7 @@ import {
   updateToolRun
 } from "./store.js";
 import { createAgentCoreInput, decideNextStep, recordAgentCoreFailure } from "./core.js";
+import { executeAgentLoop, shouldUseAgentLoopForMessage } from "./agent-loop.js";
 import { executeAndRecordReadPlan } from "./read.js";
 import { executeTool, executeToolRun, getTool } from "./tools.js";
 import { analyzeAndRecordUserText } from "./listen.js";
@@ -750,6 +751,69 @@ export async function processUserMessage(
   const pendingToolRuns = (await listToolRuns(sessionId)).filter((run) =>
     ["pending", "approved", "running"].includes(run.status)
   );
+
+  if (shouldUseAgentLoopForMessage(content, listenAnalysis.result)) {
+    const loopResult = await executeAgentLoop({
+      sessionId,
+      userMessageId: userMessage.id,
+      userText: content,
+      locale,
+      listenResult: listenAnalysis.result,
+      recentMessages: history,
+      config
+    });
+    const spoken = await addSpokenAssistantMessage(sessionId, loopResult.answer, locale, {
+      mode: "answer",
+      contentTypes: ["markdown"],
+      sourceRefs: [
+        { kind: "listen_result", id: listenAnalysis.result.id, label: listenAnalysis.result.primaryIntent },
+        { kind: "user_message", id: userMessage.id, label: "current user message" },
+        ...loopResult.contextBlocks.map((block) => ({
+          kind: "context_block" as const,
+          id: block.id,
+          label: block.title
+        }))
+      ],
+      riskFlags: [
+        ...listenAnalysis.result.riskFlags,
+        ...loopResult.observations
+          .filter((observation) => !observation.ok)
+          .map(() => "agent_loop_tool_failed")
+      ],
+      uncertaintyFlags: loopResult.warnings,
+      reason: loopResult.reason,
+      meta: {
+        source: "agent-loop",
+        agentLoopSteps: loopResult.steps.map((step) => ({
+          index: step.index,
+          action: step.action,
+          reason: step.reason
+        })),
+        agentLoopObservations: loopResult.observations.map((observation) => ({
+          tool: observation.tool,
+          ok: observation.ok,
+          input: observation.input,
+          contextBlockIds: observation.contextBlockIds,
+          readResultIds: observation.readResultIds
+        })),
+        contextBlockIds: loopResult.contextBlocks.map((block) => block.id)
+      }
+    });
+    return {
+      userMessage,
+      assistantMessage: spoken.message,
+      toolRuns: [],
+      listenEvent: listenAnalysis.event,
+      listenResult: listenAnalysis.result,
+      speakPlan: spoken.speakPlan,
+      speakMessage: spoken.speakMessage,
+      speakResult: spoken.speakResult,
+      agentCoreResults: [],
+      contextBlocks: loopResult.contextBlocks,
+      readResults: loopResult.readResults
+    };
+  }
+
   const agentCoreResults: AgentCoreResult[] = [];
   let contextBlocks: ContextBlock[] = [];
   let readResults: ReadResult[] = [];
