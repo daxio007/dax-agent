@@ -448,11 +448,13 @@ export async function searchAndReadWeb(
   if (!allowNetwork) {
     throw new Error("Network reading is disabled for this read plan.");
   }
-  const search = await searchWebWithMcp(source.target, Math.min(Math.max(maxResults, 1), 5));
+  const newsSearch = isNewsSearchTarget(source.target);
+  const searchLimit = newsSearch ? 8 : Math.min(Math.max(maxResults, 1), 5);
+  const search = await searchWebWithMcp(source.target, searchLimit);
   if (!search.results.length) {
     throw new Error(`No web search results were returned for: ${source.target}`);
   }
-  const pageLimit = Math.min(search.results.length, 3);
+  const pageLimit = Math.min(search.results.length, newsSearch ? 5 : 3);
   const perPageChars = Math.max(6000, Math.floor(maxBytes / pageLimit));
   const sections: string[] = [
     `Search query: ${search.query}`,
@@ -487,6 +489,15 @@ export async function searchAndReadWeb(
     },
     planId
   );
+}
+
+/**
+ * 使用方法：Web 搜索读取前传入搜索 target。
+ * 作用：识别新闻类搜索，以便扩大搜索结果数和读取页面数。
+ * @param target 当前 web_search 来源的搜索关键词。
+ */
+function isNewsSearchTarget(target: string): boolean {
+  return /新闻|资讯|咨询|消息|热点|头条|latest|news/i.test(target);
 }
 
 /**
