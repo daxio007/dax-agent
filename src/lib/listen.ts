@@ -813,10 +813,12 @@ function detectContextNeeds(
   const explicitUrl = extractFirstUrl(text);
   const asksSearchCapability = isWebSearchCapabilityQuestion(text);
   const asksCurrentHoliday = isCurrentHolidayQuestion(text);
+  const asksWeather = isWeatherQuestion(text);
+  const canSearchWeather = asksWeather && hasWeatherLocation(text);
   const requestsWebResearch =
     !asksSearchCapability &&
     !explicitUrl &&
-    (asksCurrentHoliday || isWebResearchRequest(text));
+    (asksCurrentHoliday || canSearchWeather || isWebResearchRequest(text));
   const needsWorkspace = /项目|代码|实现|开发|提交|构建|build|workspace|code/i.test(text);
   const needsMemory = /继续|下一步|刚才|之前|项目记忆|路线图|根据(?:这个|上述|现有)文档|按这个/i.test(text);
   if (!requestsWebResearch && (needsMemory || primaryIntent === "continue")) {
@@ -836,8 +838,10 @@ function detectContextNeeds(
       "web_search",
       asksCurrentHoliday
         ? "Current holiday information must be verified using the exact runtime date."
+        : canSearchWeather
+          ? "Weather, temperature, precipitation, and air-quality answers require fresh public data."
         : "User requested public web search and page reading.",
-      asksCurrentHoliday ? currentHolidaySearchQuery() : extractWebSearchQuery(text),
+      asksCurrentHoliday ? currentHolidaySearchQuery() : canSearchWeather ? weatherSearchQuery(text) : extractWebSearchQuery(text),
       true
     );
   }
@@ -892,6 +896,27 @@ function isCurrentHolidayQuestion(text: string): boolean {
 }
 
 /**
+ * 使用方法：detectContextNeeds() 判断是否需要新鲜公共信息时调用。
+ * 作用：把天气、气温、降雨和空气质量类问题识别为需要联网读取，而不是普通聊天。
+ * @param text 当前方法使用的 text 参数。
+ */
+function isWeatherQuestion(text: string): boolean {
+  if (/(?:能不能|可以|是否|支持|具备|有没有).{0,12}(?:查|查询|搜索|获取).{0,6}(?:天气|气温|温度|空气质量|AQI|weather)/i.test(text)) {
+    return false;
+  }
+  return /天气|天气预报|气温|温度|几度|多少度|下雨|降雨|雨量|空气质量|AQI|雾霾|紫外线|weather|forecast/i.test(text);
+}
+
+/**
+ * 使用方法：detectContextNeeds() 区分天气查询是否能直接联网搜索时调用。
+ * 作用：没有城市或地区时让 agent 先追问地点，避免搜索一个无法落地的“今天的天气”。
+ * @param text 当前方法使用的 text 参数。
+ */
+function hasWeatherLocation(text: string): boolean {
+  return Boolean(extractWeatherLocation(text));
+}
+
+/**
  * 使用方法：在 currentHolidaySearchQuery 的调用点传入所需参数并调用。
  * 作用：支撑当前模块的业务流程并保持调用入口可审计。
  */
@@ -899,6 +924,38 @@ function isCurrentHolidayQuestion(text: string): boolean {
 function currentHolidaySearchQuery(): string {
   const context = getRuntimeTimeContext("zh-CN");
   return `${localDateSearchLabel(context)} ${context.weekday} 节日 纪念日 中国 国际`;
+}
+
+/**
+ * 使用方法：detectContextNeeds() 确认天气问题后调用。
+ * 作用：把用户原问题补上运行时日期和常见天气信号，形成更稳定的搜索词。
+ * @param text 当前方法使用的 text 参数。
+ */
+function weatherSearchQuery(text: string): string {
+  const context = getRuntimeTimeContext("zh-CN");
+  const location = extractWeatherLocation(text) || text;
+  const primary = /[A-Za-z]/.test(location)
+    ? `${location} weather forecast today`
+    : `${location}天气预报15天`;
+  return cleanWebSearchQuery(`${primary} ${localDateSearchLabel(context)} ${context.weekday}`).slice(0, 180);
+}
+
+/**
+ * 使用方法：hasWeatherLocation() 和 weatherSearchQuery() 需要城市或地区关键词时调用。
+ * 作用：从自然语言天气问题中剥离时间、天气词和问句词，保留可搜索的地点片段。
+ * @param text 当前方法使用的 text 参数。
+ */
+function extractWeatherLocation(text: string): string {
+  const cleaned = text
+    .replace(/天气预报|天气|气温|温度|几度|多少度|会不会|下雨|降雨|雨量|空气质量|AQI|雾霾|紫外线|weather|forecast/gi, " ")
+    .replace(/今天|今日|明天|后天|现在|当前|实时|这几天|最近|本周|周末|早上|上午|下午|晚上|今晚/gi, " ")
+    .replace(/怎么样|如何|多少|吗|呢|吧|啊|呀|么|请|帮我|麻烦|查一下|查询|查查|看看|看下|告诉我|一下|的|在|本地|这里|当前位置/gi, " ")
+    .replace(/[，。！？?、,.;；:：()[\]{}"'`~!@#$%^&*_+=|\\/<>-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "";
+  if (/^(?:today|tomorrow|now|current|local|here)$/i.test(cleaned)) return "";
+  return cleaned.length >= 2 ? cleaned.slice(0, 60) : "";
 }
 
 /**

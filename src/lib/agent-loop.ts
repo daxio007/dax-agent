@@ -82,6 +82,7 @@ export function shouldUseAgentLoopForMessage(text: string, listenResult: ListenR
       text
     );
   if (asksSearchCapability) return false;
+  if (isWeatherQuestion(text)) return true;
   if (listenResult.contextNeeds.some((need) => need.kind === "web_search" || need.kind === "web_page")) {
     return true;
   }
@@ -99,6 +100,22 @@ export async function executeAgentLoop(input: AgentLoopInput): Promise<AgentLoop
   const contextBlocks: ContextBlock[] = [];
   const readResults: ReadResult[] = [];
   const warnings: string[] = [];
+
+  if (isWeatherQuestion(input.userText) && !hasWeatherLocation(input.userText)) {
+    return {
+      answer: weatherLocationPrompt(input.locale),
+      reason: "Weather queries need a city or region before fresh weather data can be searched.",
+      steps,
+      observations,
+      contextBlocks,
+      readResults,
+      warnings
+    };
+  }
+
+  if (isWeatherQuestion(input.userText) && hasWeatherLocation(input.userText)) {
+    return executeWeatherLookup(input);
+  }
 
   for (let index = 0; index < MAX_LOOP_STEPS; index += 1) {
     const completion = await completeChat(input.config, loopMessages(input, observations), input.locale);
@@ -141,6 +158,57 @@ export async function executeAgentLoop(input: AgentLoopInput): Promise<AgentLoop
   return {
     answer: truncateText(answer, ANSWER_LIMIT) || defaultEmptyAnswer(input.locale),
     reason: finalAction.reason || "The loop reached its step limit and asked the model to synthesize from observations.",
+    steps,
+    observations,
+    contextBlocks,
+    readResults,
+    warnings
+  };
+}
+
+/**
+ * 使用方法：executeAgentLoop() 收到有地点的天气问题时调用。
+ * 作用：用少量确定性的 web_search 获取天气上下文，再交给模型总结，避免通用循环反复搜索。
+ * @param input 当前 agent loop 输入。
+ */
+async function executeWeatherLookup(input: AgentLoopInput): Promise<AgentLoopResult> {
+  const steps: AgentLoopStep[] = [];
+  const observations: AgentLoopObservation[] = [];
+  const contextBlocks: ContextBlock[] = [];
+  const readResults: ReadResult[] = [];
+  const warnings: string[] = [];
+  for (const query of weatherSearchQueries(input.userText)) {
+    steps.push({
+      index: steps.length,
+      action: "web_search",
+      reason: "Weather answers require fresh public weather data.",
+      rawModelText: `deterministic weather lookup: ${query}`
+    });
+    const toolResult = await executeReadOnlyAction(input, {
+      action: "web_search",
+      query,
+      reason: "Weather answers require fresh public weather data."
+    });
+    observations.push(toolResult.observation);
+    contextBlocks.push(...toolResult.contextBlocks);
+    readResults.push(...toolResult.readResults);
+    if (!toolResult.observation.ok) warnings.push(toolResult.observation.summary);
+  }
+
+  const finalCompletion = await completeChat(input.config, loopMessages(input, observations, true), input.locale);
+  const finalAction = parseLoopAction(finalCompletion.content);
+  const answer = finalAction.action === "finish"
+    ? finalAction.answer
+    : usablePlainText(finalCompletion.content);
+  steps.push({
+    index: steps.length,
+    action: finalAction.action === "finish" ? "finish" : finalAction.action,
+    reason: finalAction.reason || "Weather lookup synthesized from fresh observations.",
+    rawModelText: truncateText(finalCompletion.content, 2000)
+  });
+  return {
+    answer: truncateText(answer, ANSWER_LIMIT) || defaultEmptyAnswer(input.locale),
+    reason: finalAction.reason || "Weather lookup synthesized from fresh observations.",
     steps,
     observations,
     contextBlocks,
@@ -209,6 +277,8 @@ function loopSystemPrompt(forceFinish: boolean): string {
     '{"action":"workspace_read","path":"relative/or/absolute/path","reason":"why"} - read a local workspace/document path.',
     '{"action":"finish","answer":"final user-facing answer","reason":"why enough"} - answer the user.',
     "Use tools proactively for current facts, news, public web info, source-specific claims, and local workspace questions.",
+    "For weather, temperature, rain, air-quality, and forecast questions with a location, search fresh weather data before answering.",
+    "If a weather question has no usable location, ask for the location instead of inventing one.",
     "Do not ask the user for a link when a web_search can find likely sources.",
     "If a tool result is weak or empty, try a better query or read another source before giving up.",
     "Never claim a search, page read, file read, command, or modification happened unless it appears in observations.",
@@ -288,7 +358,7 @@ function stringField(value: unknown): string {
  * @param input 当前 agent loop 输入。
  */
 function requiresToolUse(input: AgentLoopInput): boolean {
-  return input.listenResult.contextNeeds.some((need) =>
+  return (isWeatherQuestion(input.userText) && hasWeatherLocation(input.userText)) || input.listenResult.contextNeeds.some((need) =>
     ["web_search", "web_page", "workspace", "document", "memory"].includes(need.kind)
   );
 }
@@ -300,6 +370,13 @@ function requiresToolUse(input: AgentLoopInput): boolean {
  */
 function fallbackToolAction(input: AgentLoopInput): AgentLoopAction | null {
   const need = input.listenResult.contextNeeds.find((item) => item.kind !== "none");
+  if (!need && isWeatherQuestion(input.userText) && hasWeatherLocation(input.userText)) {
+    return {
+      action: "web_search",
+      query: weatherSearchQuery(input.userText),
+      reason: "Weather answers require fresh public weather data."
+    };
+  }
   if (!need) return null;
   const target = need.suggestedTarget || input.userText;
   if (need.kind === "web_page" && /^https?:\/\//i.test(target)) {
@@ -452,4 +529,82 @@ function defaultEmptyAnswer(locale: Locale): string {
   return String(locale || "").toLowerCase().startsWith("zh")
     ? "我这轮没有拿到足够可靠的结果。可以换一个更具体的问题，我会继续用搜索和读取工具查。"
     : "I could not gather enough reliable information in this turn. Try a more specific question and I will continue with search and read tools.";
+}
+
+/**
+ * 使用方法：executeAgentLoop() 收到无地点天气查询时调用。
+ * 作用：用确定性话术向用户索要城市或地区，避免执行没有目标的天气搜索。
+ * @param locale 当前用户界面或消息语言。
+ */
+function weatherLocationPrompt(locale: Locale): string {
+  return String(locale || "").toLowerCase().startsWith("zh")
+    ? "可以查天气。你想查哪个城市或地区？例如“上海今天的天气怎么样”。"
+    : "I can check the weather. Which city or region should I use?";
+}
+
+/**
+ * 使用方法：路由和兜底工具选择需要识别天气类问题时调用。
+ * 作用：将天气、气温、降雨、空气质量等当前信息问题纳入强制只读工具流程。
+ * @param text 当前用户输入文本。
+ */
+function isWeatherQuestion(text: string): boolean {
+  if (/(?:能不能|可以|是否|支持|具备|有没有).{0,12}(?:查|查询|搜索|获取).{0,6}(?:天气|气温|温度|空气质量|AQI|weather)/i.test(text)) {
+    return false;
+  }
+  return /天气|天气预报|气温|温度|几度|多少度|下雨|降雨|雨量|空气质量|AQI|雾霾|紫外线|weather|forecast/i.test(text);
+}
+
+/**
+ * 使用方法：requiresToolUse() 和 fallbackToolAction() 判断天气查询是否能直接搜索时调用。
+ * 作用：没有城市或地区时允许模型追问地点，不强制执行无目标搜索。
+ * @param text 当前用户输入文本。
+ */
+function hasWeatherLocation(text: string): boolean {
+  return Boolean(extractWeatherLocation(text));
+}
+
+/**
+ * 使用方法：天气问题缺少听力层 web_search 需求时作为兜底搜索词。
+ * 作用：返回最高命中的天气搜索词，避免模型第一步直接回答或使用过宽搜索词。
+ * @param text 当前用户输入文本。
+ */
+function weatherSearchQuery(text: string): string {
+  return weatherSearchQueries(text)[0] || text;
+}
+
+/**
+ * 使用方法：executeWeatherLookup() 需要确定性天气搜索词列表时调用。
+ * 作用：用少量高命中查询覆盖官方天气站和实时天气摘要，避免通用循环反复试探。
+ * @param text 当前用户输入文本。
+ */
+function weatherSearchQueries(text: string): string[] {
+  const context = getRuntimeTimeContext("zh-CN");
+  const location = extractWeatherLocation(text) || text;
+  const primary = /[A-Za-z]/.test(location)
+    ? `${location} weather forecast today`
+    : `${location}天气预报15天`;
+  const queries = [
+    primary,
+    `${location} 天气预报 今日 实时 气温`,
+    `${location} ${context.localDate} ${context.weekday} 天气预报`
+  ].map((query) => query.replace(/\s+/g, " ").trim());
+  return [...new Set(queries)].slice(0, 2);
+}
+
+/**
+ * 使用方法：hasWeatherLocation() 和 weatherSearchQuery() 需要地点关键词时调用。
+ * 作用：从自然语言天气问题中去掉天气、时间和问句词，得到更稳定的城市/地区搜索目标。
+ * @param text 当前用户输入文本。
+ */
+function extractWeatherLocation(text: string): string {
+  const cleaned = text
+    .replace(/天气预报|天气|气温|温度|几度|多少度|会不会|下雨|降雨|雨量|空气质量|AQI|雾霾|紫外线|weather|forecast/gi, " ")
+    .replace(/今天|今日|明天|后天|现在|当前|实时|这几天|最近|本周|周末|早上|上午|下午|晚上|今晚/gi, " ")
+    .replace(/怎么样|如何|多少|吗|呢|吧|啊|呀|么|请|帮我|麻烦|查一下|查询|查查|看看|看下|告诉我|一下|的|在|本地|这里|当前位置/gi, " ")
+    .replace(/[，。！？?、,.;；:：()[\]{}"'`~!@#$%^&*_+=|\\/<>-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "";
+  if (/^(?:today|tomorrow|now|current|local|here)$/i.test(cleaned)) return "";
+  return cleaned.length >= 2 ? cleaned.slice(0, 60) : "";
 }
