@@ -347,7 +347,9 @@ function isWebSearchCapabilityQuestion(text: string): boolean {
  */
 
 function isCurrentDateQuestion(text: string): boolean {
-  return /今天|今日|现在|当前日期|几月几日|星期几|周几|what(?:'s| is) (?:the )?date|what day is it/i.test(text);
+  return /当前日期|(?:今天|今日|当天|现在|current|today).{0,12}(?:几月几[日号]|几号|日期|星期几|周几|what(?:'s| is).{0,8}date)|(?:几月几[日号]|星期几|周几)|what(?:'s| is) (?:the |today'?s )?date|what day is it/i.test(
+    text
+  );
 }
 
 /**

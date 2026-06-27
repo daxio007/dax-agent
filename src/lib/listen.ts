@@ -875,7 +875,7 @@ function isWebSearchCapabilityQuestion(text: string): boolean {
  */
 
 function isWebResearchRequest(text: string): boolean {
-  return /网上|联网|上网|搜索|搜一下|查找|调研|所有文章|网页|网站|web|online|search/i.test(text) ||
+  return /网上|联网|上网|搜索|搜一下|查找|调研|所有文章|网页|网站|新闻|资讯|咨询|消息|热点|头条|web|online|search/i.test(text) ||
     /(?:看看|查阅|阅读|研究|了解)\s*[^，。！？?]{1,120}?(?:相关)?(?:文档|资料|文章|内容)/i.test(text);
 }
 
@@ -1173,6 +1173,19 @@ function defaultReadTargetForNeed(kind: ListenContextNeed["kind"]): string {
  */
 
 function extractWebSearchQuery(text: string): string {
+  if (/新闻|资讯|咨询|消息|热点|头条/i.test(text)) {
+    const current = getRuntimeTimeContext("zh-CN");
+    const scope = /国内外|国内.+国外|国外.+国内|国际|全球|世界/i.test(text)
+      ? "国内 国际"
+      : /国外|国际|全球|世界/i.test(text)
+        ? "国际"
+        : /国内/i.test(text)
+          ? "国内"
+          : "";
+    return cleanWebSearchQuery(
+      `${localDateSearchLabel(current)} ${scope} 今日新闻 资讯`.replace(/\s+/g, " ")
+    );
+  }
   const relatedDocs = text.match(
     /(?:看看|查阅|阅读|研究|了解)\s*([^，。！？?]{2,120}?)(?:的)?相关(?:文档|资料|文章|内容)/i
   )?.[1]?.trim();
